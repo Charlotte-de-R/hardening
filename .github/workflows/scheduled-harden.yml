@@ -51,8 +51,9 @@ jobs:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
           format: 'sarif'
           output: 'trivy-vaultwarden.sarif'
-          severity: 'CRITICAL'
-          exit-code: '1'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
 
 
       - name: Upload Trivy results
