@@ -5,5 +5,3 @@ USER root
 RUN apk update && \
     apk upgrade && \
     rm -rf /var/cache/apk/*
-
-USER tailscale
