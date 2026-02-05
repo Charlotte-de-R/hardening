@@ -1,0 +1,9 @@
+FROM redis:6.2-alpine
+
+USER root
+
+RUN apk update && \
+    apk upgrade && \
+    rm -rf /var/cache/apk/*
+
+USER redis
