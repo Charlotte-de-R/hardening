@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     steps:
       - name: Set image prefix
@@ -43,3 +44,19 @@ jobs:
           push: true
           tags: |
             ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+
+      - name: Trivy scan (Vaultwarden)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+          format: 'sarif'
+          output: 'trivy-vaultwarden.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-vaultwarden.sarif'
+          category: 'vaultwarden'
