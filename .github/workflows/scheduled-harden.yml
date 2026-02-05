@@ -17,7 +17,7 @@ jobs:
       contents: read
       packages: write
       security-events: write
-      id-token: write  # ★ keyless署名に必須
+      id-token: write
 
     steps:
       - name: Set image prefix
@@ -62,11 +62,10 @@ jobs:
           sarif_file: 'trivy-vaultwarden.sarif'
           category: 'vaultwarden'
 
-      # === ここから keyless Cosign ===
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.6.0
 
-      - name: Keyless sign image with Cosign
+      - name: Keyless sign Vaultwarden image
         if: success()
         env:
           COSIGN_EXPERIMENTAL: "true"
@@ -74,3 +73,66 @@ jobs:
           cosign sign \
             --yes \
             ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+
+  build-crowdsec:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Set image prefix
+        id: prep
+        run: echo "IMAGE_PREFIX=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}" >> $GITHUB_OUTPUT
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build CrowdSec (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/crowdsec
+          file: ./dockerfiles/crowdsec/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
+
+      - name: Trivy scan (CrowdSec)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
+          format: 'sarif'
+          output: 'trivy-crowdsec.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-crowdsec.sarif'
+          category: 'crowdsec'
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.6.0
+
+      - name: Keyless sign CrowdSec image
+        if: success()
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign \
+            --yes \
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
