@@ -129,23 +129,87 @@ jobs:
           tags: |
             ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
 
-      # ===== Trivy スキャン（Vaultwarden / CrowdSec / Tailscale） =====
+      # ===== Trivy スキャン（全サービス個別） =====
 
-      - name: Trivy scan Vaultwarden
+      - name: Trivy scan Tailscale
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
           format: 'sarif'
-          output: 'trivy-vaultwarden.sarif'
+          output: 'trivy-tailscale.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
-      - name: Upload Trivy results (Vaultwarden)
+      - name: Upload Trivy results (Tailscale)
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: 'trivy-vaultwarden.sarif'
-          category: 'vaultwarden'
+          sarif_file: 'trivy-tailscale.sarif'
+          category: 'tailscale'
+
+      - name: Trivy scan Immich Server
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
+          format: 'sarif'
+          output: 'trivy-immich-server.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results (Immich Server)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-immich-server.sarif'
+          category: 'immich-server'
+
+      - name: Trivy scan Immich ML
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
+          format: 'sarif'
+          output: 'trivy-immich-ml.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results (Immich ML)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-immich-ml.sarif'
+          category: 'immich-ml'
+
+      - name: Trivy scan Immich Redis
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
+          format: 'sarif'
+          output: 'trivy-immich-redis.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results (Immich Redis)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-immich-redis.sarif'
+          category: 'immich-redis'
+
+      - name: Trivy scan Immich Postgres
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
+          format: 'sarif'
+          output: 'trivy-immich-postgres.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results (Immich Postgres)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-immich-postgres.sarif'
+          category: 'immich-postgres'
 
       - name: Trivy scan CrowdSec
         uses: aquasecurity/trivy-action@master
@@ -163,21 +227,69 @@ jobs:
           sarif_file: 'trivy-crowdsec.sarif'
           category: 'crowdsec'
 
-      - name: Trivy scan Tailscale
+      - name: Trivy scan Vaultwarden
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
           format: 'sarif'
-          output: 'trivy-tailscale.sarif'
+          output: 'trivy-vaultwarden.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
-      - name: Upload Trivy results (Tailscale)
+      - name: Upload Trivy results (Vaultwarden)
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: 'trivy-tailscale.sarif'
-          category: 'tailscale'
+          sarif_file: 'trivy-vaultwarden.sarif'
+          category: 'vaultwarden'
+
+      - name: Trivy scan Socket Proxy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
+          format: 'sarif'
+          output: 'trivy-socket-proxy.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results (Socket Proxy)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-socket-proxy.sarif'
+          category: 'socket-proxy'
+
+      - name: Trivy scan Nextcloud
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
+          format: 'sarif'
+          output: 'trivy-nextcloud.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results (Nextcloud)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-nextcloud.sarif'
+          category: 'nextcloud'
+
+      - name: Trivy scan MariaDB
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
+          format: 'sarif'
+          output: 'trivy-mariadb.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '0'
+
+      - name: Upload Trivy results (MariaDB)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-mariadb.sarif'
+          category: 'mariadb'
 
       # ===== Cosign keyless署名（全部） =====
 
