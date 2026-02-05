@@ -60,6 +60,7 @@ jobs:
         if: steps.check_tailscale.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/tailscale
           file: ./dockerfiles/tailscale/Dockerfile.hardened
           push: true
@@ -99,6 +100,7 @@ jobs:
         if: steps.check_immich_server.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/immich-server
           file: ./dockerfiles/immich-server/Dockerfile.hardened
           push: true
@@ -138,6 +140,7 @@ jobs:
         if: steps.check_immich_ml.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/immich-machine-learning
           file: ./dockerfiles/immich-machine-learning/Dockerfile.hardened
           push: true
@@ -177,6 +180,7 @@ jobs:
         if: steps.check_immich_redis.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/immich-redis
           file: ./dockerfiles/immich-redis/Dockerfile.hardened
           push: true
@@ -216,6 +220,7 @@ jobs:
         if: steps.check_immich_postgres.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/immich-postgres
           file: ./dockerfiles/immich-postgres/Dockerfile.hardened
           push: true
@@ -254,6 +259,7 @@ jobs:
         if: steps.check_crowdsec.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/crowdsec
           file: ./dockerfiles/crowdsec/Dockerfile.hardened
           push: true
@@ -293,6 +299,7 @@ jobs:
         if: steps.check_vaultwarden.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/vaultwarden
           file: ./dockerfiles/vaultwarden/Dockerfile.hardened
           push: true
@@ -332,6 +339,7 @@ jobs:
         if: steps.check_socket_proxy.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/socket-proxy
           file: ./dockerfiles/socket-proxy/Dockerfile.hardened
           push: true
@@ -371,6 +379,7 @@ jobs:
         if: steps.check_nextcloud.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/nextcloud
           file: ./dockerfiles/nextcloud/Dockerfile.hardened
           push: true
@@ -410,6 +419,7 @@ jobs:
         if: steps.check_mariadb.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
+          no-cache: true
           context: ./dockerfiles/mariadb
           file: ./dockerfiles/mariadb/Dockerfile.hardened
           push: true
