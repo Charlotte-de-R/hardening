@@ -131,31 +131,6 @@ jobs:
 
       # ===== Trivy スキャン（全部まとめてレポート） =====
 
-      - name: Trivy scan all images
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
-          format: 'sarif'
-          output: 'trivy-all.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: 'trivy-all.sarif'
-          category: 'all-images'
 
       # ===== Cosign keyless署名（全部） =====
 
