@@ -1,4 +1,4 @@
-name: Scheduled Build & Scan
+name: Scheduled Build & Scan (All Hardened Images)
 
 on:
   schedule:
@@ -11,7 +11,7 @@ env:
   IMAGE_REPO: hardening
 
 jobs:
-  build-vaultwarden:
+  build-all:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,131 +37,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Vaultwarden (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/vaultwarden
-          file: ./dockerfiles/vaultwarden/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-
-      - name: Trivy scan (Vaultwarden)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-          format: 'sarif'
-          output: 'trivy-vaultwarden.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-vaultwarden.sarif'
-          category: 'vaultwarden'
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.6.0
-
-      - name: Keyless sign Vaultwarden image
-        if: success()
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          cosign sign \
-            --yes \
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-
-  build-crowdsec:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      security-events: write
-      id-token: write
-
-    steps:
-      - name: Set image prefix
-        id: prep
-        run: echo "IMAGE_PREFIX=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}" >> $GITHUB_OUTPUT
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build CrowdSec (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/crowdsec
-          file: ./dockerfiles/crowdsec/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-
-      - name: Trivy scan (CrowdSec)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-          format: 'sarif'
-          output: 'trivy-crowdsec.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-crowdsec.sarif'
-          category: 'crowdsec'
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.6.0
-
-      - name: Keyless sign CrowdSec image
-        if: success()
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          cosign sign \
-            --yes \
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-
-  build-tailscale:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      security-events: write
-      id-token: write
-
-    steps:
-      - name: Set image prefix
-        id: prep
-        run: echo "IMAGE_PREFIX=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}" >> $GITHUB_OUTPUT
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # ===== ビルド & Push =====
 
       - name: Build Tailscale (hardened)
         uses: docker/build-push-action@v5
@@ -172,30 +48,131 @@ jobs:
           tags: |
             ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
 
-      - name: Trivy scan (Tailscale)
+      - name: Build Immich Server (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-server
+          file: ./dockerfiles/immich-server/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
+
+      - name: Build Immich ML (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-machine-learning
+          file: ./dockerfiles/immich-machine-learning/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
+
+      - name: Build Immich Redis (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-redis
+          file: ./dockerfiles/immich-redis/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
+
+      - name: Build Immich Postgres (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-postgres
+          file: ./dockerfiles/immich-postgres/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
+
+      - name: Build CrowdSec (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/crowdsec
+          file: ./dockerfiles/crowdsec/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
+
+      - name: Build Vaultwarden (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/vaultwarden
+          file: ./dockerfiles/vaultwarden/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+
+      - name: Build Socket Proxy (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/socket-proxy
+          file: ./dockerfiles/socket-proxy/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
+
+      - name: Build Nextcloud (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/nextcloud
+          file: ./dockerfiles/nextcloud/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
+
+      - name: Build MariaDB (hardened)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/mariadb
+          file: ./dockerfiles/mariadb/Dockerfile.hardened
+          push: true
+          tags: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
+
+      # ===== Trivy スキャン（全部まとめてレポート） =====
+
+      - name: Trivy scan all images
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+          image-ref: |
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
           format: 'sarif'
-          output: 'trivy-tailscale.sarif'
+          output: 'trivy-all.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
       - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: 'trivy-tailscale.sarif'
-          category: 'tailscale'
+          sarif_file: 'trivy-all.sarif'
+          category: 'all-images'
+
+      # ===== Cosign keyless署名（全部） =====
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.6.0
 
-      - name: Keyless sign Tailscale image
-        if: success()
+      - name: Keyless sign all images
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign \
-            --yes \
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
+          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
