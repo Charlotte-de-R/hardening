@@ -37,101 +37,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ===== ビルド & Push =====
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.6.0
 
-      - name: Build Tailscale (hardened)
+      # 👇 更新チェックスクリプトに実行権限を付与
+      - name: Make update script executable
+        run: chmod +x ./check_update.sh
+
+      # ==========================================================
+      # 1. Tailscale (Alpine)
+      # ==========================================================
+      - name: Check Tailscale Updates
+        id: check_tailscale
+        run: ./check_update.sh tailscale/tailscale:latest apk
+
+      - name: Build Tailscale
+        if: steps.check_tailscale.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: docker/build-push-action@v5
         with:
           context: ./dockerfiles/tailscale
           file: ./dockerfiles/tailscale/Dockerfile.hardened
           push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
-
-      - name: Build Immich Server (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/immich-server
-          file: ./dockerfiles/immich-server/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
-
-      - name: Build Immich ML (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/immich-machine-learning
-          file: ./dockerfiles/immich-machine-learning/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
-
-      - name: Build Immich Redis (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/immich-redis
-          file: ./dockerfiles/immich-redis/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
-
-      - name: Build Immich Postgres (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/immich-postgres
-          file: ./dockerfiles/immich-postgres/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
-
-      - name: Build CrowdSec (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/crowdsec
-          file: ./dockerfiles/crowdsec/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-
-      - name: Build Vaultwarden (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/vaultwarden
-          file: ./dockerfiles/vaultwarden/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-
-      - name: Build Socket Proxy (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/socket-proxy
-          file: ./dockerfiles/socket-proxy/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
-
-      - name: Build Nextcloud (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/nextcloud
-          file: ./dockerfiles/nextcloud/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
-
-      - name: Build MariaDB (hardened)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./dockerfiles/mariadb
-          file: ./dockerfiles/mariadb/Dockerfile.hardened
-          push: true
-          tags: |
-            ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
-
-      # ===== Trivy スキャン（全サービス個別） =====
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
 
       - name: Trivy scan Tailscale
+        if: steps.check_tailscale.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
@@ -140,14 +70,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Tailscale
+        if: steps.check_tailscale.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+
       - name: Upload Trivy results (Tailscale)
+        if: steps.check_tailscale.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-tailscale.sarif'
           category: 'tailscale'
 
+      # ==========================================================
+      # 2. Immich Server (Debian/Ubuntu)
+      # ==========================================================
+      - name: Check Immich Server Updates
+        id: check_immich_server
+        run: ./check_update.sh ghcr.io/immich-app/immich-server:release apt
+
+      - name: Build Immich Server
+        if: steps.check_immich_server.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-server
+          file: ./dockerfiles/immich-server/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
+
       - name: Trivy scan Immich Server
+        if: steps.check_immich_server.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
@@ -156,14 +109,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Immich Server
+        if: steps.check_immich_server.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
+
       - name: Upload Trivy results (Immich Server)
+        if: steps.check_immich_server.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-immich-server.sarif'
           category: 'immich-server'
 
+      # ==========================================================
+      # 3. Immich ML (Debian/Ubuntu)
+      # ==========================================================
+      - name: Check Immich ML Updates
+        id: check_immich_ml
+        run: ./check_update.sh ghcr.io/immich-app/immich-machine-learning:release apt
+
+      - name: Build Immich ML
+        if: steps.check_immich_ml.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-machine-learning
+          file: ./dockerfiles/immich-machine-learning/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
+
       - name: Trivy scan Immich ML
+        if: steps.check_immich_ml.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
@@ -172,14 +148,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Immich ML
+        if: steps.check_immich_ml.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
+
       - name: Upload Trivy results (Immich ML)
+        if: steps.check_immich_ml.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-immich-ml.sarif'
           category: 'immich-ml'
 
+      # ==========================================================
+      # 4. Immich Redis (Alpine)
+      # ==========================================================
+      - name: Check Immich Redis Updates
+        id: check_immich_redis
+        run: ./check_update.sh redis:6.2-alpine apk
+
+      - name: Build Immich Redis
+        if: steps.check_immich_redis.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-redis
+          file: ./dockerfiles/immich-redis/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
+
       - name: Trivy scan Immich Redis
+        if: steps.check_immich_redis.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
@@ -188,14 +187,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Immich Redis
+        if: steps.check_immich_redis.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
+
       - name: Upload Trivy results (Immich Redis)
+        if: steps.check_immich_redis.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-immich-redis.sarif'
           category: 'immich-redis'
 
+      # ==========================================================
+      # 5. Immich Postgres (Debian)
+      # ==========================================================
+      - name: Check Immich Postgres Updates
+        id: check_immich_postgres
+        run: ./check_update.sh tensorchord/pgvecto-rs:pg14-v0.2.0 apt
+
+      - name: Build Immich Postgres
+        if: steps.check_immich_postgres.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/immich-postgres
+          file: ./dockerfiles/immich-postgres/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
+
       - name: Trivy scan Immich Postgres
+        if: steps.check_immich_postgres.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
@@ -204,14 +226,36 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Immich Postgres
+        if: steps.check_immich_postgres.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
+
       - name: Upload Trivy results (Immich Postgres)
+        if: steps.check_immich_postgres.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-immich-postgres.sarif'
           category: 'immich-postgres'
+          # ==========================================================
+      # 6. CrowdSec (Alpine)
+      # ==========================================================
+      - name: Check CrowdSec Updates
+        id: check_crowdsec
+        run: ./check_update.sh crowdsecurity/crowdsec:latest apk
+
+      - name: Build CrowdSec (hardened)
+        if: steps.check_crowdsec.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/crowdsec
+          file: ./dockerfiles/crowdsec/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
 
       - name: Trivy scan CrowdSec
+        if: steps.check_crowdsec.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
@@ -220,14 +264,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign CrowdSec
+        if: steps.check_crowdsec.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
+
       - name: Upload Trivy results (CrowdSec)
+        if: steps.check_crowdsec.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-crowdsec.sarif'
           category: 'crowdsec'
 
+      # ==========================================================
+      # 7. Vaultwarden (Debian)
+      # ==========================================================
+      - name: Check Vaultwarden Updates
+        id: check_vaultwarden
+        run: ./check_update.sh vaultwarden/server:latest apt
+
+      - name: Build Vaultwarden (hardened)
+        if: steps.check_vaultwarden.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/vaultwarden
+          file: ./dockerfiles/vaultwarden/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+
       - name: Trivy scan Vaultwarden
+        if: steps.check_vaultwarden.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
@@ -236,14 +303,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Vaultwarden
+        if: steps.check_vaultwarden.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
+
       - name: Upload Trivy results (Vaultwarden)
+        if: steps.check_vaultwarden.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-vaultwarden.sarif'
           category: 'vaultwarden'
 
+      # ==========================================================
+      # 8. Socket Proxy (Alpine)
+      # ==========================================================
+      - name: Check Socket Proxy Updates
+        id: check_socket_proxy
+        run: ./check_update.sh tecnativa/docker-socket-proxy:latest apk
+
+      - name: Build Socket Proxy (hardened)
+        if: steps.check_socket_proxy.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/socket-proxy
+          file: ./dockerfiles/socket-proxy/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
+
       - name: Trivy scan Socket Proxy
+        if: steps.check_socket_proxy.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
@@ -252,14 +342,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Socket Proxy
+        if: steps.check_socket_proxy.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
+
       - name: Upload Trivy results (Socket Proxy)
+        if: steps.check_socket_proxy.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-socket-proxy.sarif'
           category: 'socket-proxy'
 
+      # ==========================================================
+      # 9. Nextcloud (Debian)
+      # ==========================================================
+      - name: Check Nextcloud Updates
+        id: check_nextcloud
+        run: ./check_update.sh nextcloud:latest apt
+
+      - name: Build Nextcloud (hardened)
+        if: steps.check_nextcloud.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/nextcloud
+          file: ./dockerfiles/nextcloud/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
+
       - name: Trivy scan Nextcloud
+        if: steps.check_nextcloud.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
@@ -268,14 +381,37 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign Nextcloud
+        if: steps.check_nextcloud.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
+
       - name: Upload Trivy results (Nextcloud)
+        if: steps.check_nextcloud.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-nextcloud.sarif'
           category: 'nextcloud'
 
+      # ==========================================================
+      # 10. MariaDB (Debian)
+      # ==========================================================
+      - name: Check MariaDB Updates
+        id: check_mariadb
+        run: ./check_update.sh mariadb:latest apt
+
+      - name: Build MariaDB (hardened)
+        if: steps.check_mariadb.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./dockerfiles/mariadb
+          file: ./dockerfiles/mariadb/Dockerfile.hardened
+          push: true
+          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
+
       - name: Trivy scan MariaDB
+        if: steps.check_mariadb.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
@@ -284,29 +420,16 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
+      - name: Sign MariaDB
+        if: steps.check_mariadb.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
+
       - name: Upload Trivy results (MariaDB)
+        if: steps.check_mariadb.outputs.needs_update == 'true' || github.event_name == 'workflow_dispatch'
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: 'trivy-mariadb.sarif'
           category: 'mariadb'
-
-      # ===== Cosign keyless署名（全部） =====
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.6.0
-
-      - name: Keyless sign all images
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
-          cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
+          
