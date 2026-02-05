@@ -17,6 +17,7 @@ jobs:
       contents: read
       packages: write
       security-events: write
+      id-token: write  # ★ keyless署名に必須
 
     steps:
       - name: Set image prefix
@@ -54,11 +55,22 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
-
-
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: 'trivy-vaultwarden.sarif'
           category: 'vaultwarden'
+
+      # === ここから keyless Cosign ===
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.6.0
+
+      - name: Keyless sign image with Cosign
+        if: success()
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign \
+            --yes \
+            ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
