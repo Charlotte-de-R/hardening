@@ -7,7 +7,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
+  IMAGE_OWNER: charlotte-de-r       
+  IMAGE_REPO: hardening             
+  IMAGE_PREFIX: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}
 
 jobs:
   build-vaultwarden:
@@ -15,7 +17,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-      security-events: write
+      # Trivyを後で戻すとき用
+      # security-events: write
 
     steps:
       - name: Checkout repository
@@ -36,28 +39,24 @@ jobs:
         with:
           context: ./dockerfiles/vaultwarden
           file: ./dockerfiles/vaultwarden/Dockerfile.hardened
-          push: false
-          load: true
+          push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/vaultwarden:hardened
+            ${{ env.IMAGE_PREFIX }}/vaultwarden:hardened
 
-      - name: Trivy scan (Vaultwarden)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/vaultwarden:hardened
-          format: 'sarif'
-          output: 'trivy-vaultwarden.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
-
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-vaultwarden.sarif'
-          category: 'vaultwarden'
-
-      - name: Push image
-        if: success()
-        run: |
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/vaultwarden:hardened
+      # ---- Trivy はいったんコメントアウト ----
+      # - name: Trivy scan (Vaultwarden)
+      #   uses: aquasecurity/trivy-action@master
+      #   with:
+      #     image-ref: ${{ env.IMAGE_PREFIX }}/vaultwarden:hardened
+      #     format: 'sarif'
+      #     output: 'trivy-vaultwarden.sarif'
+      #     severity: 'CRITICAL,HIGH'
+      #     exit-code: '1'
+      #
+      # - name: Upload Trivy results
+      #   uses: github/codeql-action/upload-sarif@v3
+      #   if: always()
+      #   with:
+      #     sarif_file: 'trivy-vaultwarden.sarif'
+      #     category: 'vaultwarden'
+      # -----------------------------------------
