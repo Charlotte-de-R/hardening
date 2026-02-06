@@ -1,13 +1,14 @@
 #!/bin/bash
-# check_update.sh (Debug Enhanced)
+# Usage: ./check_update.sh <target_image> <package_manager>
+
 IMAGE=$1
 PKG_MGR=$2
 
-echo "🔍 Checking updates for existing image: $IMAGE ($PKG_MGR)..."
+echo "🔍 Checking updates for: $IMAGE ($PKG_MGR)..."
 
-# 1. 自分のイメージをPull (なければ初回とみなす)
+# 1. 確実に最新をPullする (認証情報はActions側でログイン済み前提)
 if ! docker pull "$IMAGE" >/dev/null 2>&1; then
-  echo "✨ Image not found (First run?). Build required."
+  echo "⚠️ Failed to pull $IMAGE. Assuming first run or image missing."
   echo "needs_update=true" >> $GITHUB_OUTPUT
   exit 0
 fi
@@ -15,24 +16,22 @@ fi
 UPDATES=""
 
 # 2. パッケージ更新チェック (root強制実行)
-#    エラーが出ても止まらないよう || true をつける
 if [ "$PKG_MGR" == "apk" ]; then
   # Alpine
   UPDATES=$(docker run --rm --user 0:0 --entrypoint sh "$IMAGE" -c "apk update >/dev/null 2>&1 && apk list -u 2>/dev/null" || true)
 elif [ "$PKG_MGR" == "apt" ]; then
   # Debian/Ubuntu
-  # apt-get upgrade でシミュレーション
   UPDATES=$(docker run --rm --user 0:0 --entrypoint sh "$IMAGE" -c "apt-get update >/dev/null 2>&1 && apt-get -s upgrade 2>/dev/null | grep '^Inst'" || true)
 fi
 
-# 3. 判定とデバッグ出力
+# 3. 判定
 if [ -n "$UPDATES" ]; then
-  echo "✨ Updates found in hardened image. Re-build required."
+  echo "✨ Updates detected! The current image is outdated."
   echo "--- 📦 DETECTED PACKAGES 📦 ---"
   echo "$UPDATES"
   echo "-------------------------------"
   echo "needs_update=true" >> $GITHUB_OUTPUT
 else
-  echo "💤 Hardened image is up-to-date. Skipping build."
+  echo "💤 Image is up-to-date. No packages to upgrade."
   echo "needs_update=false" >> $GITHUB_OUTPUT
 fi
