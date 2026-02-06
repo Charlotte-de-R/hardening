@@ -9,14 +9,4 @@ ENV DEBIAN_FRONTEND=noninteractive
 #    - libsqlite3-0: システム依存関係に含まれるSQLiteの脆弱性対策。
 #    - libexpat1 / libxml2: XMLパーサの脆弱性対策。
 #    - openssl: 暗号化通信ライブラリの更新。
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        zlib1g \
-        libsqlite3-0 \
-        libexpat1 \
-        libxml2 \
-        openssl \
-    && apt-get autoremove -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# INSERT_HARDENING_HERE
