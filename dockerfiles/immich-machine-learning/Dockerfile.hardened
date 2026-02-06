@@ -9,14 +9,4 @@ ENV DEBIAN_FRONTEND=noninteractive
 #    - libsqlite3-0: 内部DB処理の脆弱性対策
 #    - libexpat1: XML/メタデータ解析時のNullポインタ参照対策
 #    - libglib2.0-0: 画像処理系ライブラリが依存する共通ライブラリの保護
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        zlib1g \
-        libsqlite3-0 \
-        libexpat1 \
-        libglib2.0-0 \
-        libxml2 \
-    && apt-get autoremove -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# INSERT_HARDENING_HERE
