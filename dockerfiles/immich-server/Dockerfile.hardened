@@ -9,14 +9,4 @@ ENV DEBIAN_FRONTEND=noninteractive
 #    - zlib1g: データ圧縮・展開時のバッファオーバーフロー対策。
 #    - libsqlite3-0: システム依存関係の保護。
 #    - openssl: 暗号化通信ライブラリの最新化。
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        libexpat1 \
-        zlib1g \
-        libsqlite3-0 \
-        libxml2 \
-        openssl \
-    && apt-get autoremove -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# INSERT_HARDENING_HERE
