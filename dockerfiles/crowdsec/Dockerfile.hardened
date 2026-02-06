@@ -8,13 +8,4 @@ USER root
 #    - sqlite-libs: CrowdSecの判定DB(SQLite)の脆弱性対策 (必須)
 #    - zlib: 圧縮データのハンドリング時の脆弱性対策
 #    - libcrypto3 / libssl3: 暗号化通信の保護
-RUN apk update && \
-    apk upgrade --no-cache && \
-    apk add --no-cache --upgrade \
-        sqlite-libs \
-        zlib \
-        libcrypto3 \
-        libssl3 \
-        busybox \
-        tzdata && \
-    rm -rf /var/cache/apk/*
+# INSERT_HARDENING_HERE
