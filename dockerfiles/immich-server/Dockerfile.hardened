@@ -2,8 +2,21 @@ FROM ghcr.io/immich-app/immich-server:release
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Hardening Strategy:
+# 1. apt-get update & upgrade: ベースOSの全パッケージ更新
+# 2. Explicit Install: Trivyで指摘されたライブラリおよび攻撃面となりうるコアライブラリを指名更新
+#    - libexpat1: TrivyでCritical検出 (Null pointer dereference)。XML/メタデータ解析の保護。
+#    - zlib1g: データ圧縮・展開時のバッファオーバーフロー対策。
+#    - libsqlite3-0: システム依存関係の保護。
+#    - openssl: 暗号化通信ライブラリの最新化。
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    apt-get install -y --no-install-recommends \
+        libexpat1 \
+        zlib1g \
+        libsqlite3-0 \
+        libxml2 \
+        openssl \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
