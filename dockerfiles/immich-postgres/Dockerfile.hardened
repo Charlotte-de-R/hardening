@@ -2,8 +2,21 @@ FROM tensorchord/pgvecto-rs:pg14-v0.2.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Hardening Strategy:
+# 1. apt-get update & upgrade: ベースOS(Debian)の全パッケージ更新
+# 2. Explicit Install: Trivyで指摘された脆弱なライブラリを指名して最新化
+#    - zlib1g: Postgresのデータ圧縮やWAL処理で重要。バッファオーバーフロー対策。
+#    - libsqlite3-0: システム依存関係に含まれるSQLiteの脆弱性対策。
+#    - libexpat1 / libxml2: XMLパーサの脆弱性対策。
+#    - openssl: 暗号化通信ライブラリの更新。
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    apt-get install -y --no-install-recommends \
+        zlib1g \
+        libsqlite3-0 \
+        libexpat1 \
+        libxml2 \
+        openssl \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
