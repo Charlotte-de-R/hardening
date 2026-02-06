@@ -2,7 +2,19 @@ FROM crowdsecurity/crowdsec:latest
 
 USER root
 
+# Hardening:
+# 1. apk update & upgrade: ベースOSの全パッケージ更新
+# 2. explicit upgrade: Trivyで指摘された、あるいは攻撃面となりうる重要ライブラリを指名更新
+#    - sqlite-libs: CrowdSecの判定DB(SQLite)の脆弱性対策 (必須)
+#    - zlib: 圧縮データのハンドリング時の脆弱性対策
+#    - libcrypto3 / libssl3: 暗号化通信の保護
 RUN apk update && \
-    apk upgrade && \
+    apk upgrade --no-cache && \
+    apk add --no-cache --upgrade \
+        sqlite-libs \
+        zlib \
+        libcrypto3 \
+        libssl3 \
+        busybox \
+        tzdata && \
     rm -rf /var/cache/apk/*
-
