@@ -1,10 +1,24 @@
 FROM vaultwarden/server:latest
 
-USER root
+ENV DEBIAN_FRONTEND=noninteractive
 
+# Hardening Strategy:
+# 1. apt-get upgrade: ベースOS(Debian)の全パッケージ更新
+# 2. Explicit Install: パスワード管理の安全性に関わるコアライブラリを強制更新
+#    - libsqlite3-0: VaultwardenのデフォルトDBエンジン。SQLインジェクションやメモリ破壊の防止。
+#    - openssl / libssl3: 暗号化通信およびハッシュ処理の要。
+#    - libcurl4: アイコン取得機能などで使用されるHTTPクライアント。
+#    - zlib1g: データ圧縮時の脆弱性対策。
+#    - ca-certificates: 最新のルート証明書ストアへの更新(外部接続の信頼性担保)。
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
+    apt-get install -y --no-install-recommends \
+        libsqlite3-0 \
+        openssl \
+        libssl3 \
+        libcurl4 \
+        zlib1g \
+        ca-certificates \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
