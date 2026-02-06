@@ -2,7 +2,36 @@ FROM redis:6.2-alpine
 
 USER root
 
+# Hardening Step 1: ベースOSとライブラリの強制更新
+# - apk upgrade: 全体更新
+# - explicit upgrade: 暗号化ライブラリ(libcrypto/libssl)と圧縮ライブラリ(zlib)を最新化
 RUN apk update && \
-    apk upgrade && \
-    rm -rf /var/cache/apk/*
+    apk upgrade --no-cache && \
+    apk add --no-cache --upgrade \
+        libcrypto3 \
+        libssl3 \
+        zlib \
+        busybox \
+        ssl_client \
+    && rm -rf /var/cache/apk/*
 
+# Hardening Step 2: Gosu (Golang) の脆弱性修正
+# コンテナのエントリポイントで使用されるツール。
+# ベースイメージ同梱のものが古いため、最新版(1.17以降)をダウンロードして強制上書きします。
+ENV GOSU_VERSION 1.17
+RUN set -ex; \
+    apk add --no-cache --virtual .fetch-deps ca-certificates wget; \
+    \
+    # アーキテクチャ(amd64/arm64)を自動判別してバイナリを取得
+    case "$(apk --print-arch)" in \
+        x86_64) arch='amd64' ;; \
+        aarch64) arch='arm64' ;; \
+        *) echo >&2 "error: unsupported architecture"; exit 1 ;; \
+    esac; \
+    \
+    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$arch"; \
+    chmod +x /usr/local/bin/gosu; \
+    \
+    # 動作確認と後始末
+    gosu --version; \
+    apk del .fetch-deps
