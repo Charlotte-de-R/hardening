@@ -9,12 +9,4 @@ USER root
 #    - zlib: HTTP圧縮/展開時のバッファオーバーフロー対策
 #    - libcrypto3 / libssl3: 暗号化ライブラリの保護
 #    - busybox: システムシェルの脆弱性対策
-RUN apk update && \
-    apk upgrade --no-cache && \
-    apk add --no-cache --upgrade \
-        haproxy \
-        zlib \
-        libcrypto3 \
-        libssl3 \
-        busybox \
-    && rm -rf /var/cache/apk/*
+# INSERT_HARDENING_HERE
