@@ -26,6 +26,19 @@ jobs:
       id-token: write
 
     steps:
+      - name: Determine Cache Strategy
+        id: cache_strat
+        run: |
+          if [ "${{ inputs.force_build }}" == "true" ]; then
+            # 強制ビルドボタンが押された時は、現在時刻を使って強制更新
+            echo "CACHE_KEY=${{ github.run_id }}" >> $GITHUB_ENV
+            echo "Strategy: FORCE UPDATE (No Cache)"
+          else
+            # 通常時は「年.週番号」を使う (例: 2026.06)
+            # これにより、同じ週の間はキャッシュが効き続ける
+            echo "CACHE_KEY=$(date +%Y.%U)" >> $GITHUB_ENV
+            echo "Strategy: WEEKLY CACHE (Expires every Sunday)"
+          fi
       - name: Set image prefix
         id: prep
         run: echo "IMAGE_PREFIX=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}" >> $GITHUB_OUTPUT
@@ -74,7 +87,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Tailscale
         if: steps.check_tailscale.outputs.needs_update == 'true' || inputs.force_build == true
@@ -117,7 +130,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Immich Server
         if: steps.check_immich_server.outputs.needs_update == 'true' || inputs.force_build == true
@@ -160,7 +173,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Immich ML
         if: steps.check_immich_ml.outputs.needs_update == 'true' || inputs.force_build == true
@@ -203,7 +216,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Immich Redis
         if: steps.check_immich_redis.outputs.needs_update == 'true' || inputs.force_build == true
@@ -246,7 +259,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Immich Postgres
         if: steps.check_immich_postgres.outputs.needs_update == 'true' || inputs.force_build == true
@@ -288,7 +301,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan CrowdSec
         if: steps.check_crowdsec.outputs.needs_update == 'true' || inputs.force_build == true
@@ -331,7 +344,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Vaultwarden
         if: steps.check_vaultwarden.outputs.needs_update == 'true' || inputs.force_build == true
@@ -374,7 +387,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Socket Proxy
         if: steps.check_socket_proxy.outputs.needs_update == 'true' || inputs.force_build == true
@@ -417,7 +430,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan Nextcloud
         if: steps.check_nextcloud.outputs.needs_update == 'true' || inputs.force_build == true
@@ -460,7 +473,7 @@ jobs:
           tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
           # ▼ キャッシュ無効化のための引数
           build-args: |
-            CACHEBUST=${{ github.run_id }}
+            CACHEBUST=${{ env.CACHE_KEY }}
 
       - name: Trivy scan MariaDB
         if: steps.check_mariadb.outputs.needs_update == 'true' || inputs.force_build == true
