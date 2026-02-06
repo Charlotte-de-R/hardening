@@ -2,8 +2,32 @@ FROM mariadb:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Hardening Strategy:
+# 1. OS Update: ベースシステムの更新
+# 2. Explicit Lib Update: データベースの整合性に関わる重要ライブラリ(zlib/ssl)の強制更新
+# 3. Gosu Replacement: 脆弱な古いgosuを削除し、最新版(1.17以降)に置換
 RUN apt-get update && \
     apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        wget \
+        ca-certificates \
+        zlib1g \
+        openssl \
+        libssl3 \
+        libxml2 \
+        libexpat1 \
+    && \
+    # --- Gosu Update Logic Start ---
+    # 既存の古いgosuを削除 (apt管理下およびバイナリ配置場所)
+    apt-get purge -y gosu || true && \
+    rm -f /usr/local/bin/gosu /usr/bin/gosu && \
+    # 最新版(1.17)を取得して配置
+    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/1.17/gosu-$(dpkg --print-architecture)" && \
+    chmod +x /usr/local/bin/gosu && \
+    # 互換性のためシンボリックリンクを作成
+    ln -s /usr/local/bin/gosu /usr/bin/gosu && \
+    # --- Gosu Update Logic End ---
+    \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
