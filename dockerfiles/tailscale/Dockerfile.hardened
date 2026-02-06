@@ -2,6 +2,20 @@ FROM tailscale/tailscale:latest
 
 USER root
 
+# Hardening Strategy:
+# 1. apk upgrade: Alpine Linux全体の更新
+# 2. Explicit Upgrade: ネットワーク制御と認証に関わる重要パッケージを強制更新
+#    - iptables / ip6tables: Tailscaleがルーティング設定(Netfilter)を行うために必須。脆弱性対策。
+#    - ca-certificates: コントロールプレーンとのHTTPS通信の信頼性担保。
+#    - libcrypto3 / libssl3: システムレベルの暗号化ライブラリの更新。
+#    - busybox: シェル環境の脆弱性対策。
 RUN apk update && \
-    apk upgrade && \
-    rm -rf /var/cache/apk/*
+    apk upgrade --no-cache && \
+    apk add --no-cache --upgrade \
+        ca-certificates \
+        iptables \
+        ip6tables \
+        libcrypto3 \
+        libssl3 \
+        busybox \
+    && rm -rf /var/cache/apk/*
