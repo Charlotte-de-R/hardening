@@ -3,19 +3,5 @@ ARG CACHEBUST=1
 RUN echo "Cache bust: $CACHEBUST" && \
     apk update && \
     apk upgrade --no-cache && \
-    apk add --no-cache --upgrade \
-        zlib \
-        sqlite-libs \
-        libcrypto3 \
-        libssl3 \
-        ca-certificates \
-    && apk del --no-cache \
-        wget \
-        curl \
-        nano \
-        vim \
-        git \
-        netcat-openbsd \
-        bind-tools \
-    && rm -rf /var/cache/apk/*
+    rm -rf /var/cache/apk/*
 # --- COMMON HARDENING END ---
