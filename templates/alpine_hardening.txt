@@ -3,10 +3,7 @@ ARG CACHEBUST=1
 RUN echo "Cache bust: $CACHEBUST" && \
     apk update && \
     apk upgrade --no-cache && \
-    apk del --no-cache \
-        nano \
-        vim \
-        git \
+    (apk del --no-cache nano vim git || true) \
     && rm -rf /var/cache/apk/* \
     && rm -rf /usr/share/man/*
 # --- COMMON HARDENING END ---
