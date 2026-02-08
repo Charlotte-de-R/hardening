@@ -2,8 +2,18 @@ FROM mariadb:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Hardening Strategy:
-# 1. OS Update: ベースシステムの更新
-# 2. Explicit Lib Update: データベースの整合性に関わる重要ライブラリ(zlib/ssl)の強制更新
-# 3. Gosu Replacement: 脆弱な古いgosuを削除し、最新版(1.17以降)に置換
-# INSERT_HARDENING_HERE
+# ▼▼▼ 修正: テンプレートタグ(# INSERT_HARDENING_HERE)を削除し、直書きする ▼▼▼
+# MariaDBは依存関係が複雑なため、ツールの削除(purge)は行わず、
+# OSとライブラリのセキュリティアップデートのみを適用する
+ARG CACHEBUST=1
+RUN echo "Cache bust: $CACHEBUST" && \
+    apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        openssl \
+        zlib1g \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# ▲▲▲ 修正ここまで ▲▲▲
