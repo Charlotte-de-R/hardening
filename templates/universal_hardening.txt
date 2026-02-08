@@ -1,6 +1,7 @@
 # --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---
 ARG CACHEBUST=1
 RUN echo "Cache bust: $CACHEBUST" && \
+    export PATH=$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin && \
     if [ -f /etc/alpine-release ]; then \
         echo "⛰️ Detected Alpine Linux" && \
         apk update && \
