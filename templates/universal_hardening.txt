@@ -1,23 +1,22 @@
 # --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---
 ARG CACHEBUST=1
 RUN echo "Cache bust: $CACHEBUST" && \
-    export PATH=$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin && \
-    if [ -f /etc/alpine-release ]; then \
-        echo "⛰️ Detected Alpine Linux" && \
-        apk update && \
-        apk upgrade --no-cache && \
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH" && \
+    if command -v apk >/dev/null 2>&1; then \
+        echo "⛰️ Alpine Linux detected" && \
+        (apk update || echo "⚠️ apk update failed, skipping") && \
+        (apk upgrade --no-cache || echo "⚠️ apk upgrade failed, skipping") && \
         (apk del --no-cache nano vim git || true) && \
-        rm -rf /var/cache/apk/* && \
-        rm -rf /usr/share/man/*; \
-    elif command -v apt-get >/dev/null; then \
-        echo "🌀 Detected Debian/Ubuntu" && \
-        apt-get update && \
-        apt-get upgrade -y && \
+        rm -rf /var/cache/apk/* /usr/share/man/* || true; \
+    elif command -v apt-get >/dev/null 2>&1; then \
+        echo "🌀 Debian/Ubuntu detected" && \
+        (apt-get update || echo "⚠️ apt-get update failed, skipping") && \
+        (apt-get upgrade -y || echo "⚠️ apt-get upgrade failed, skipping") && \
         (apt-get purge -y --auto-remove vim nano git telnet ftp man-db doc-debian || true) && \
         apt-get clean && \
-        rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/*; \
+        rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/* || true; \
     else \
-        echo "⚠️ Unknown OS family - Skipping hardening steps." && \
+        echo "⚠️ No supported package manager found. Skipping hardening steps." && \
         true; \
     fi
 # --- COMMON HARDENING END ---
