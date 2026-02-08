@@ -1,8 +1,8 @@
-name: Scheduled Build & Scan (All Hardened Images)
+name: Scheduled Build & Scan (Matrix Strategy)
 
 on:
   schedule:
-    - cron: '30 19 * * *'  # UTC 19:30 → JST 04:30
+    - cron: '30 19 * * *'  # JST 04:30
   workflow_dispatch:
     inputs:
       force_build:
@@ -17,7 +17,7 @@ env:
   IMAGE_REPO: hardening
 
 jobs:
-  build-all:
+  build-and-harden:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,33 +25,87 @@ jobs:
       security-events: write
       id-token: write
 
+    strategy:
+      fail-fast: false # 1つ失敗しても他は続ける
+      matrix:
+        include:
+          # --- 1. Network & Security ---
+          - name: tailscale
+            context: ./dockerfiles/tailscale
+            image_tag: tailscale:hardened
+            pkg_mgr: apk
+          - name: crowdsec
+            context: ./dockerfiles/crowdsec
+            image_tag: crowdsec:hardened
+            pkg_mgr: apk
+          - name: socket-proxy
+            context: ./dockerfiles/socket-proxy
+            image_tag: socket-proxy:hardened
+            pkg_mgr: apk
+            - name: loki
+            context: ./dockerfiles/loki
+            image_tag: loki:hardened
+            pkg_mgr: apk
+          - name: promtail
+            context: ./dockerfiles/promtail
+            image_tag: promtail:hardened
+            pkg_mgr: apk
+            
+          # --- 2. Immich Suite ---
+          - name: immich-server
+            context: ./dockerfiles/immich-server
+            image_tag: immich-server:hardened
+            pkg_mgr: apt
+          - name: immich-machine-learning
+            context: ./dockerfiles/immich-machine-learning
+            image_tag: immich-machine-learning:hardened
+            pkg_mgr: apt
+          - name: immich-redis
+            context: ./dockerfiles/immich-redis
+            image_tag: immich-redis:hardened
+            pkg_mgr: apk
+          - name: immich-postgres
+            context: ./dockerfiles/immich-postgres
+            image_tag: immich-postgres:hardened
+            pkg_mgr: apt
+
+          # --- 3. Apps & DB ---
+          - name: nextcloud
+            context: ./dockerfiles/nextcloud
+            image_tag: nextcloud:hardened
+            pkg_mgr: apt
+          - name: mariadb
+            context: ./dockerfiles/mariadb
+            image_tag: mariadb:hardened
+            pkg_mgr: apt
+          - name: vaultwarden
+            context: ./dockerfiles/vaultwarden
+            image_tag: vaultwarden:hardened
+            pkg_mgr: apt
+
     steps:
       - name: Determine Cache Strategy
         id: cache_strat
         run: |
           if [ "${{ inputs.force_build }}" == "true" ]; then
-            # 強制ビルドボタンが押された時は、現在時刻を使って強制更新
             echo "CACHE_KEY=${{ github.run_id }}" >> $GITHUB_ENV
-            echo "Strategy: FORCE UPDATE (No Cache)"
           else
-            # 通常時は「年.週番号」を使う (例: 2026.06)
-            # これにより、同じ週の間はキャッシュが効き続ける
             echo "CACHE_KEY=$(date +%Y.%U)" >> $GITHUB_ENV
-            echo "Strategy: WEEKLY CACHE (Expires every Sunday)"
           fi
-      - name: Set image prefix
-        id: prep
-        run: echo "IMAGE_PREFIX=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}" >> $GITHUB_OUTPUT
+
+      - name: Set image full path
+        run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ▼▼▼ 新規追加: セキュリティテンプレートの注入 ▼▼▼
+      # ▼ スクリプト実行権限の付与 (念のため)
+      - name: Make scripts executable
+        run: chmod +x update_dockerfiles.sh check_update.sh
+
+      # ▼ DockerfileへのHardeningテンプレート注入
       - name: Inject Security Hardening Templates
-        run: |
-          chmod +x update_dockerfiles.sh
-          ./update_dockerfiles.sh
-      # ▲▲▲ 追加ここまで ▲▲▲
+        run: ./update_dockerfiles.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -66,434 +120,46 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.6.0
 
-      - name: Make update script executable
-        run: chmod +x ./check_update.sh
+      # ▼ 更新チェック (スクリプトへの引数をMatrix変数に変更)
+      - name: Check Updates
+        id: check
+        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }} ${{ matrix.pkg_mgr }}
 
-      # ==========================================================
-      # 1. Tailscale (Alpine)
-      # ==========================================================
-      - name: Check Tailscale Updates
-        id: check_tailscale
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened apk
-
-      - name: Build Tailscale
-        if: steps.check_tailscale.outputs.needs_update == 'true' || inputs.force_build == true
+      # ▼ ビルド & プッシュ
+      - name: Build and Push
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
         with:
           no-cache: true
-          context: ./dockerfiles/tailscale
-          file: ./dockerfiles/tailscale/Dockerfile.hardened
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile.hardened
           push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
-          # ▼ キャッシュ無効化のための引数
+          tags: ${{ env.FULL_IMAGE_NAME }}
           build-args: |
             CACHEBUST=${{ env.CACHE_KEY }}
 
-      - name: Trivy scan Tailscale
-        if: steps.check_tailscale.outputs.needs_update == 'true' || inputs.force_build == true
+      # ▼ Trivy スキャン
+      - name: Trivy scan
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+          image-ref: ${{ env.FULL_IMAGE_NAME }}
           format: 'sarif'
-          output: 'trivy-tailscale.sarif'
+          output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           exit-code: '0'
 
-      - name: Sign Tailscale
-        if: steps.check_tailscale.outputs.needs_update == 'true' || inputs.force_build == true
+      # ▼ Cosign 署名
+      - name: Sign image
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         env:
           COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/tailscale:hardened
+        run: cosign sign --yes ${{ env.FULL_IMAGE_NAME }}
 
-      - name: Upload Trivy results (Tailscale)
-        if: steps.check_tailscale.outputs.needs_update == 'true' || inputs.force_build == true
+      # ▼ GitHub Security タブへのアップロード
+      - name: Upload Trivy results
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: 'trivy-tailscale.sarif'
-          category: 'tailscale'
-
-      # ==========================================================
-      # 2. Immich Server (Debian/Ubuntu)
-      # ==========================================================
-      - name: Check Immich Server Updates
-        id: check_immich_server
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened apt
-
-      - name: Build Immich Server
-        if: steps.check_immich_server.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/immich-server
-          file: ./dockerfiles/immich-server/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan Immich Server
-        if: steps.check_immich_server.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
-          format: 'sarif'
-          output: 'trivy-immich-server.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign Immich Server
-        if: steps.check_immich_server.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-server:hardened
-
-      - name: Upload Trivy results (Immich Server)
-        if: steps.check_immich_server.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-immich-server.sarif'
-          category: 'immich-server'
-
-      # ==========================================================
-      # 3. Immich ML (Debian/Ubuntu)
-      # ==========================================================
-      - name: Check Immich ML Updates
-        id: check_immich_ml
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened apt
-
-      - name: Build Immich ML
-        if: steps.check_immich_ml.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/immich-machine-learning
-          file: ./dockerfiles/immich-machine-learning/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan Immich ML
-        if: steps.check_immich_ml.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
-          format: 'sarif'
-          output: 'trivy-immich-ml.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign Immich ML
-        if: steps.check_immich_ml.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-machine-learning:hardened
-
-      - name: Upload Trivy results (Immich ML)
-        if: steps.check_immich_ml.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-immich-ml.sarif'
-          category: 'immich-ml'
-
-      # ==========================================================
-      # 4. Immich Redis (Alpine)
-      # ==========================================================
-      - name: Check Immich Redis Updates
-        id: check_immich_redis
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened apk
-
-      - name: Build Immich Redis
-        if: steps.check_immich_redis.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/immich-redis
-          file: ./dockerfiles/immich-redis/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan Immich Redis
-        if: steps.check_immich_redis.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
-          format: 'sarif'
-          output: 'trivy-immich-redis.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign Immich Redis
-        if: steps.check_immich_redis.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-redis:hardened
-
-      - name: Upload Trivy results (Immich Redis)
-        if: steps.check_immich_redis.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-immich-redis.sarif'
-          category: 'immich-redis'
-
-      # ==========================================================
-      # 5. Immich Postgres (Debian)
-      # ==========================================================
-      - name: Check Immich Postgres Updates
-        id: check_immich_postgres
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened apt
-
-      - name: Build Immich Postgres
-        if: steps.check_immich_postgres.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/immich-postgres
-          file: ./dockerfiles/immich-postgres/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan Immich Postgres
-        if: steps.check_immich_postgres.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
-          format: 'sarif'
-          output: 'trivy-immich-postgres.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign Immich Postgres
-        if: steps.check_immich_postgres.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/immich-postgres:hardened
-
-      - name: Upload Trivy results (Immich Postgres)
-        if: steps.check_immich_postgres.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-immich-postgres.sarif'
-          category: 'immich-postgres'
-          # ==========================================================
-      # 6. CrowdSec (Alpine)
-      # ==========================================================
-      - name: Check CrowdSec Updates
-        id: check_crowdsec
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened apk
-
-      - name: Build CrowdSec (hardened)
-        if: steps.check_crowdsec.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/crowdsec
-          file: ./dockerfiles/crowdsec/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan CrowdSec
-        if: steps.check_crowdsec.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-          format: 'sarif'
-          output: 'trivy-crowdsec.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign CrowdSec
-        if: steps.check_crowdsec.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/crowdsec:hardened
-
-      - name: Upload Trivy results (CrowdSec)
-        if: steps.check_crowdsec.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-crowdsec.sarif'
-          category: 'crowdsec'
-
-      # ==========================================================
-      # 7. Vaultwarden (Debian)
-      # ==========================================================
-      - name: Check Vaultwarden Updates
-        id: check_vaultwarden
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened apt
-
-      - name: Build Vaultwarden (hardened)
-        if: steps.check_vaultwarden.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/vaultwarden
-          file: ./dockerfiles/vaultwarden/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan Vaultwarden
-        if: steps.check_vaultwarden.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-          format: 'sarif'
-          output: 'trivy-vaultwarden.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign Vaultwarden
-        if: steps.check_vaultwarden.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/vaultwarden:hardened
-
-      - name: Upload Trivy results (Vaultwarden)
-        if: steps.check_vaultwarden.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-vaultwarden.sarif'
-          category: 'vaultwarden'
-
-      # ==========================================================
-      # 8. Socket Proxy (Alpine)
-      # ==========================================================
-      - name: Check Socket Proxy Updates
-        id: check_socket_proxy
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened apk
-
-      - name: Build Socket Proxy (hardened)
-        if: steps.check_socket_proxy.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/socket-proxy
-          file: ./dockerfiles/socket-proxy/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan Socket Proxy
-        if: steps.check_socket_proxy.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
-          format: 'sarif'
-          output: 'trivy-socket-proxy.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign Socket Proxy
-        if: steps.check_socket_proxy.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/socket-proxy:hardened
-
-      - name: Upload Trivy results (Socket Proxy)
-        if: steps.check_socket_proxy.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-socket-proxy.sarif'
-          category: 'socket-proxy'
-
-      # ==========================================================
-      # 9. Nextcloud (Debian)
-      # ==========================================================
-      - name: Check Nextcloud Updates
-        id: check_nextcloud
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened apt
-
-      - name: Build Nextcloud (hardened)
-        if: steps.check_nextcloud.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/nextcloud
-          file: ./dockerfiles/nextcloud/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan Nextcloud
-        if: steps.check_nextcloud.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
-          format: 'sarif'
-          output: 'trivy-nextcloud.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign Nextcloud
-        if: steps.check_nextcloud.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/nextcloud:hardened
-
-      - name: Upload Trivy results (Nextcloud)
-        if: steps.check_nextcloud.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-nextcloud.sarif'
-          category: 'nextcloud'
-
-      # ==========================================================
-      # 10. MariaDB (Debian)
-      # ==========================================================
-      - name: Check MariaDB Updates
-        id: check_mariadb
-        run: ./check_update.sh ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened apt
-
-      - name: Build MariaDB (hardened)
-        if: steps.check_mariadb.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ./dockerfiles/mariadb
-          file: ./dockerfiles/mariadb/Dockerfile.hardened
-          push: true
-          tags: ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
-          # ▼ キャッシュ無効化のための引数
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-
-      - name: Trivy scan MariaDB
-        if: steps.check_mariadb.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
-          format: 'sarif'
-          output: 'trivy-mariadb.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          exit-code: '0'
-
-      - name: Sign MariaDB
-        if: steps.check_mariadb.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ steps.prep.outputs.IMAGE_PREFIX }}/mariadb:hardened
-
-      - name: Upload Trivy results (MariaDB)
-        if: steps.check_mariadb.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-mariadb.sarif'
-          category: 'mariadb'
+          sarif_file: 'trivy-results.sarif'
+          category: ${{ matrix.name }}
