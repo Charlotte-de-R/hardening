@@ -14,7 +14,6 @@ ALL_TARGETS=(
     "dockerfiles/immich-redis/Dockerfile.hardened"
     "dockerfiles/socket-proxy/Dockerfile.hardened"
     "dockerfiles/tailscale/Dockerfile.hardened"
-    "dockerfiles/loki/Dockerfile.hardened"
     "dockerfiles/promtail/Dockerfile.hardened"
 )
 
