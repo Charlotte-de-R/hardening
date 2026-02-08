@@ -42,7 +42,7 @@ jobs:
             context: ./dockerfiles/socket-proxy
             image_tag: socket-proxy:hardened
             pkg_mgr: apk
-            - name: loki
+          - name: loki
             context: ./dockerfiles/loki
             image_tag: loki:hardened
             pkg_mgr: apk
