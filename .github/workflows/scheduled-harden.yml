@@ -49,7 +49,7 @@ jobs:
           - name: promtail
             context: ./dockerfiles/promtail
             image_tag: promtail:hardened
-            pkg_mgr: apk
+            pkg_mgr: apt
             
           # --- 2. Immich Suite ---
           - name: immich-server
