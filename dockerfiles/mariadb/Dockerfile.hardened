@@ -2,9 +2,6 @@ FROM mariadb:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ▼▼▼ 修正: テンプレートタグ(# INSERT_HARDENING_HERE)を削除し、直書きする ▼▼▼
-# MariaDBは依存関係が複雑なため、ツールの削除(purge)は行わず、
-# OSとライブラリのセキュリティアップデートのみを適用する
 ARG CACHEBUST=1
 RUN echo "Cache bust: $CACHEBUST" && \
     apt-get update && \
@@ -16,4 +13,3 @@ RUN echo "Cache bust: $CACHEBUST" && \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-# ▲▲▲ 修正ここまで ▲▲▲
