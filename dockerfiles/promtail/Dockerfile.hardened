@@ -1,0 +1,13 @@
+FROM grafana/promtail:latest
+
+# Hardening処理(apk)のために一時的にrootへ切り替え
+USER root
+
+ARG CACHEBUST=1
+
+# ▼ update_dockerfiles.sh がここにHardeningコマンドを注入します
+# --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---
+# --- COMMON HARDENING END ---
+
+# セキュリティのため Promtail ユーザーに戻す
+USER promtail
