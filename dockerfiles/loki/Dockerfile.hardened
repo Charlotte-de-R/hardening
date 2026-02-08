@@ -1,11 +1,3 @@
 FROM grafana/loki:latest
 
-USER root
-
 ARG CACHEBUST=1
-
-RUN apk update && \
-    apk upgrade --no-cache && \
-    rm -rf /var/cache/apk/*
-
-USER loki
