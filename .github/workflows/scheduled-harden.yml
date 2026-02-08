@@ -33,55 +33,43 @@ jobs:
           - name: tailscale
             context: ./dockerfiles/tailscale
             image_tag: tailscale:hardened
-            pkg_mgr: apk
           - name: crowdsec
             context: ./dockerfiles/crowdsec
             image_tag: crowdsec:hardened
-            pkg_mgr: apk
           - name: socket-proxy
             context: ./dockerfiles/socket-proxy
             image_tag: socket-proxy:hardened
-            pkg_mgr: apk
           - name: loki
             context: ./dockerfiles/loki
             image_tag: loki:hardened
-            pkg_mgr: apk
           - name: promtail
             context: ./dockerfiles/promtail
             image_tag: promtail:hardened
-            pkg_mgr: apt
             
           # --- 2. Immich Suite ---
           - name: immich-server
             context: ./dockerfiles/immich-server
             image_tag: immich-server:hardened
-            pkg_mgr: apt
           - name: immich-machine-learning
             context: ./dockerfiles/immich-machine-learning
             image_tag: immich-machine-learning:hardened
-            pkg_mgr: apt
           - name: immich-redis
             context: ./dockerfiles/immich-redis
             image_tag: immich-redis:hardened
-            pkg_mgr: apk
           - name: immich-postgres
             context: ./dockerfiles/immich-postgres
             image_tag: immich-postgres:hardened
-            pkg_mgr: apt
 
           # --- 3. Apps & DB ---
           - name: nextcloud
             context: ./dockerfiles/nextcloud
             image_tag: nextcloud:hardened
-            pkg_mgr: apt
           - name: mariadb
             context: ./dockerfiles/mariadb
             image_tag: mariadb:hardened
-            pkg_mgr: apt
           - name: vaultwarden
             context: ./dockerfiles/vaultwarden
             image_tag: vaultwarden:hardened
-            pkg_mgr: apt
 
     steps:
       - name: Determine Cache Strategy
@@ -123,7 +111,7 @@ jobs:
       # ▼ 更新チェック (スクリプトへの引数をMatrix変数に変更)
       - name: Check Updates
         id: check
-        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }} ${{ matrix.pkg_mgr }}
+        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }} 
 
       # ▼ ビルド & プッシュ
       - name: Build and Push
