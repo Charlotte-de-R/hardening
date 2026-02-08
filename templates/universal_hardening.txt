@@ -1,0 +1,22 @@
+# --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---
+ARG CACHEBUST=1
+RUN echo "Cache bust: $CACHEBUST" && \
+    if [ -f /etc/alpine-release ]; then \
+        echo "⛰️ Detected Alpine Linux" && \
+        apk update && \
+        apk upgrade --no-cache && \
+        (apk del --no-cache nano vim git || true) && \
+        rm -rf /var/cache/apk/* && \
+        rm -rf /usr/share/man/*; \
+    elif command -v apt-get >/dev/null; then \
+        echo "🌀 Detected Debian/Ubuntu" && \
+        apt-get update && \
+        apt-get upgrade -y && \
+        (apt-get purge -y --auto-remove vim nano git telnet ftp man-db doc-debian || true) && \
+        apt-get clean && \
+        rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/*; \
+    else \
+        echo "⚠️ Unknown OS family - Skipping hardening steps." && \
+        true; \
+    fi
+# --- COMMON HARDENING END ---
