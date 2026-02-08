@@ -1,10 +1,22 @@
-# 推奨: 本番運用では :latest ではなく、ハッシュ値またはバージョンタグ(例 :28.0.3)の使用を推奨
 FROM nextcloud:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# CrowdSec / Trivy 対策:
-# 1. update & upgrade: OS全体のパッチ適用
-# 2. explicit install: Trivyで指摘された脆弱なライブラリを指名して最新化を強制
-# 3. cleanup: キャッシュ削除でイメージサイズ削減と攻撃面縮小
-# INSERT_HARDENING_HERE
+# ▼▼▼ 修正: ここもテンプレートを使わず手動定義にする ▼▼▼
+ARG CACHEBUST=1
+RUN echo "Cache bust: $CACHEBUST" && \
+    apt-get update && \
+    apt-get upgrade -y && \
+    # Nextcloudには curl が必須のため明示的にインストール/維持する
+    apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        openssl \
+        zlib1g \
+        libsqlite3-0 \
+        libexpat1 \
+        libxml2 \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# ▲▲▲ 修正ここまで ▲▲▲
