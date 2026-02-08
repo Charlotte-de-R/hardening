@@ -1,13 +1,9 @@
 FROM grafana/loki:latest
 
-# Hardening処理(apk)のために一時的にrootへ切り替え
 USER root
 
 ARG CACHEBUST=1
 
-# ▼ update_dockerfiles.sh がここにHardeningコマンドを注入します
-# --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---
-# --- COMMON HARDENING END ---
+# INSERT_HARDENING_HERE
 
-# セキュリティのため Loki ユーザーに戻す
 USER loki
