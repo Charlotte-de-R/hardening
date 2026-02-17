@@ -16,7 +16,7 @@ RUN echo "Cache bust: $CACHEBUST" && \
         (apt-get upgrade -y -o Acquire::Retries=3 || echo "⚠️ apt-get upgrade failed") && \
         echo "🔒 Installing critical security updates from Debian sid..." && \
         (echo "deb [trusted=yes] http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
-         apt-get update -o Acquire::Retries=3 -o Acquire::https::Verify-Peer=false || echo "⚠️ sid update failed") && \
+         apt-get update -o Acquire::Retries=3 || echo "⚠️ sid update failed") && \
         (apt-get install -y --no-install-recommends --allow-unauthenticated -t sid \
             zlib1g \
             libsqlite3-0 \
@@ -28,5 +28,9 @@ RUN echo "Cache bust: $CACHEBUST" && \
         rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/* /etc/apt/sources.list.d/sid.list || true; \
     else \
         echo "⚠️ No supported package manager. Skipping." && true; \
-    fi
+    fi && \
+    echo "🧹 Optimizing Docker layers for Trivy scanning..." && \
+    (find /var/lib/dpkg -type f -name "*-old" -delete 2>/dev/null || true) && \
+    (find /var/lib/apt/lists -type f -delete 2>/dev/null || true) && \
+    (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
