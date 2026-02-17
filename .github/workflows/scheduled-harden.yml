@@ -176,3 +176,17 @@ jobs:
           EOFMARKER
           fi
         continue-on-error: true
+
+      - name: Sign image
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ env.FULL_IMAGE_NAME }}
+
+      - name: Upload Trivy results
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: ${{ matrix.name }}
+        continue-on-error: true
