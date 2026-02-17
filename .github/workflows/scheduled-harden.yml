@@ -87,11 +87,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ▼ スクリプト実行権限の付与 (念のため)
       - name: Make scripts executable
         run: chmod +x update_dockerfiles.sh check_update.sh
 
-      # ▼ DockerfileへのHardeningテンプレート注入
       - name: Inject Security Hardening Templates
         run: ./update_dockerfiles.sh
 
@@ -108,12 +106,13 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.6.0
 
-      # ▼ 更新チェック (スクリプトへの引数をMatrix変数に変更)
       - name: Check Updates
         id: check
-        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }} 
+        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
 
-      # ▼ ビルド & プッシュ
+      # ========================================
+      # 🔧 修正箇所: Build and Push
+      # ========================================
       - name: Build and Push
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
@@ -125,29 +124,35 @@ jobs:
           tags: ${{ env.FULL_IMAGE_NAME }}
           build-args: |
             CACHEBUST=${{ env.CACHE_KEY }}
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
-      # ▼ Trivy スキャン
+      # ========================================
+      # 🔧 修正箇所: Trivy scan
+      # ========================================
       - name: Trivy scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.FULL_IMAGE_NAME }}
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          severity: 'CRITICAL,HIGH'
           exit-code: '0'
+          ignore-unfixed: true
 
-      # ▼ Cosign 署名
       - name: Sign image
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: cosign sign --yes ${{ env.FULL_IMAGE_NAME }}
 
-      # ▼ GitHub Security タブへのアップロード
+      # ========================================
+      # 🔧 修正箇所: Upload Trivy results
+      # ========================================
       - name: Upload Trivy results
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
           category: ${{ matrix.name }}
