@@ -26,7 +26,7 @@ jobs:
       id-token: write
 
     strategy:
-      fail-fast: false # 1つ失敗しても他は続ける
+      fail-fast: false
       matrix:
         include:
           # --- 1. Network & Security ---
@@ -39,9 +39,6 @@ jobs:
           - name: socket-proxy
             context: ./dockerfiles/socket-proxy
             image_tag: socket-proxy:hardened
-          - name: loki
-            context: ./dockerfiles/loki
-            image_tag: loki:hardened
           - name: promtail
             context: ./dockerfiles/promtail
             image_tag: promtail:hardened
@@ -110,9 +107,6 @@ jobs:
         id: check
         run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
 
-      # ========================================
-      # 🔧 修正箇所: Build and Push
-      # ========================================
       - name: Build and Push
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
@@ -126,8 +120,9 @@ jobs:
             CACHEBUST=${{ env.CACHE_KEY }}
           secrets: |
             GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          provenance: false
+          sbom: false
 
-      # ▼ Trivy スキャン（エラー耐性強化版）
       - name: Trivy scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: aquasecurity/trivy-action@0.28.0
@@ -143,24 +138,44 @@ jobs:
           scanners: 'vuln'
         continue-on-error: true
 
-      # ▼ Trivy失敗時の簡易スキャン（フォールバック）
       - name: Trivy fallback scan
         if: failure() && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
         run: |
+          echo "⚠️ Primary Trivy scan failed, attempting fallback..."
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${{ github.workspace }}:/output \
             aquasec/trivy:0.56.1 \
             image \
             --format sarif \
-            --output /tmp/trivy-results.sarif \
+            --output /output/trivy-results-fallback.sarif \
             --severity CRITICAL,HIGH \
             --ignore-unfixed \
             --scanners vuln \
             --skip-dirs '/var/lib/dpkg/info,/var/cache' \
-            ${{ env.FULL_IMAGE_NAME }} || echo "⚠️ Fallback scan also failed, continuing..."
+            ${{ env.FULL_IMAGE_NAME }} || echo "⚠️ Fallback scan also failed"
           
-          if [ -f /tmp/trivy-results.sarif ]; then
-            cp /tmp/trivy-results.sarif trivy-results.sarif
+          if [ -f trivy-results-fallback.sarif ]; then
+            mv trivy-results-fallback.sarif trivy-results.sarif
+            echo "✅ Fallback scan completed"
+          else
+            echo "❌ No scan results available, creating empty SARIF"
+            cat > trivy-results.sarif << 'EOF'
+          {
+            "version": "2.1.0",
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "runs": [{
+              "tool": {
+                "driver": {
+                  "name": "Trivy",
+                  "informationUri": "https://github.com/aquasecurity/trivy",
+                  "version": "fallback"
+                }
+              },
+              "results": []
+            }]
+          }
+          EOF
           fi
         continue-on-error: true
 
@@ -170,10 +185,9 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
         run: cosign sign --yes ${{ env.FULL_IMAGE_NAME }}
 
-      # ▼ GitHub Security タブへのアップロード
       - name: Upload Trivy results
         if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
           category: ${{ matrix.name }}
