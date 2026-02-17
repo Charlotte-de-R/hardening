@@ -1,3 +1,123 @@
+name: Scheduled Build & Scan (Matrix Strategy)
+
+on:
+  schedule:
+    - cron: '30 19 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if no updates found'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: charlotte-de-r
+  IMAGE_REPO: hardening
+
+jobs:
+  build-and-harden:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: tailscale
+            context: ./dockerfiles/tailscale
+            image_tag: tailscale:hardened
+          - name: crowdsec
+            context: ./dockerfiles/crowdsec
+            image_tag: crowdsec:hardened
+          - name: socket-proxy
+            context: ./dockerfiles/socket-proxy
+            image_tag: socket-proxy:hardened
+          - name: promtail
+            context: ./dockerfiles/promtail
+            image_tag: promtail:hardened
+          - name: immich-server
+            context: ./dockerfiles/immich-server
+            image_tag: immich-server:hardened
+          - name: immich-machine-learning
+            context: ./dockerfiles/immich-machine-learning
+            image_tag: immich-machine-learning:hardened
+          - name: immich-redis
+            context: ./dockerfiles/immich-redis
+            image_tag: immich-redis:hardened
+          - name: immich-postgres
+            context: ./dockerfiles/immich-postgres
+            image_tag: immich-postgres:hardened
+          - name: nextcloud
+            context: ./dockerfiles/nextcloud
+            image_tag: nextcloud:hardened
+          - name: mariadb
+            context: ./dockerfiles/mariadb
+            image_tag: mariadb:hardened
+          - name: vaultwarden
+            context: ./dockerfiles/vaultwarden
+            image_tag: vaultwarden:hardened
+
+    steps:
+      - name: Determine Cache Strategy
+        id: cache_strat
+        run: |
+          if [ "${{ inputs.force_build }}" == "true" ]; then
+            echo "CACHE_KEY=${{ github.run_id }}" >> $GITHUB_ENV
+          else
+            echo "CACHE_KEY=$(date +%Y.%U)" >> $GITHUB_ENV
+          fi
+
+      - name: Set image full path
+        run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x update_dockerfiles.sh check_update.sh
+
+      - name: Inject Security Hardening Templates
+        run: ./update_dockerfiles.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.6.0
+
+      - name: Check Updates
+        id: check
+        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
+
+      - name: Build and Push
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
+        uses: docker/build-push-action@v5
+        with:
+          no-cache: true
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile.hardened
+          push: true
+          tags: ${{ env.FULL_IMAGE_NAME }}
+          build-args: |
+            CACHEBUST=${{ env.CACHE_KEY }}
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          provenance: false
+          sbom: false
+
       - name: Trivy scan
         id: trivy_scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
@@ -20,152 +140,21 @@
         run: |
           if [ ! -f trivy-results.sarif ] || [ ! -s trivy-results.sarif ]; then
             echo "trivy_failed=true" >> $GITHUB_OUTPUT
-            echo "⚠️ Primary Trivy scan failed"
           else
             echo "trivy_failed=false" >> $GITHUB_OUTPUT
-            echo "✅ Primary Trivy scan succeeded"
           fi
 
-      - name: Trivy fallback scan (Method 1 - Direct Docker)
+      - name: Trivy fallback - Method 2 (Tarball)
         if: steps.check_trivy.outputs.trivy_failed == 'true' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
         run: |
-          echo "🔄 Fallback Method 1: Direct Docker scan..."
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${{ github.workspace }}:/output \
-            aquasec/trivy:0.56.1 \
-            image \
-            --format sarif \
-            --output /output/trivy-fb1.sarif \
-            --severity CRITICAL,HIGH \
-            --ignore-unfixed \
-            --scanners vuln \
-            --skip-dirs '/var/lib/dpkg/info,/var/cache,/var/lib/mysql' \
-            --timeout 10m \
-            ${{ env.FULL_IMAGE_NAME }} || echo "Method 1 failed"
-          
-          if [ -f trivy-fb1.sarif ] && [ -s trivy-fb1.sarif ]; then
-            mv trivy-fb1.sarif trivy-results.sarif
-            echo "✅ Method 1 succeeded"
-            echo "fallback1_success=true" >> $GITHUB_OUTPUT
-          else
-            echo "fallback1_success=false" >> $GITHUB_OUTPUT
-          fi
-        id: fallback1
-        continue-on-error: true
-
-      - name: Trivy fallback scan (Method 2 - Export and Scan)
-        if: steps.fallback1.outputs.fallback1_success != 'true' && steps.check_trivy.outputs.trivy_failed == 'true' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
-        run: |
-          echo "🔄 Fallback Method 2: Export image as tarball and scan..."
-          
-          # イメージをtarballとしてエクスポート
+          echo "Fallback: Export as tarball and scan"
           docker pull ${{ env.FULL_IMAGE_NAME }}
-          docker save ${{ env.FULL_IMAGE_NAME }} -o /tmp/image.tar
-          
-          # tarballをスキャン
-          docker run --rm \
-            -v /tmp:/tmp:ro \
-            -v ${{ github.workspace }}:/output \
-            aquasec/trivy:0.56.1 \
-            image \
-            --input /tmp/image.tar \
-            --format sarif \
-            --output /output/trivy-fb2.sarif \
-            --severity CRITICAL,HIGH \
-            --ignore-unfixed \
-            --scanners vuln \
-            --timeout 10m || echo "Method 2 failed"
-          
-          if [ -f trivy-fb2.sarif ] && [ -s trivy-fb2.sarif ]; then
-            mv trivy-fb2.sarif trivy-results.sarif
-            echo "✅ Method 2 succeeded"
-            echo "fallback2_success=true" >> $GITHUB_OUTPUT
-          else
-            echo "fallback2_success=false" >> $GITHUB_OUTPUT
+          docker save ${{ env.FULL_IMAGE_NAME }} -o /tmp/img.tar
+          docker run --rm -v /tmp:/tmp:ro -v $PWD:/output aquasec/trivy:0.56.1 image --input /tmp/img.tar --format sarif --output /output/trivy-results.sarif --severity CRITICAL,HIGH --ignore-unfixed --scanners vuln --timeout 10m || true
+          rm -f /tmp/img.tar
+          if [ ! -f trivy-results.sarif ]; then
+            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","version":"unavailable"}},"results":[]}]}' > trivy-results.sarif
           fi
-          
-          # クリーンアップ
-          rm -f /tmp/image.tar
-        id: fallback2
-        continue-on-error: true
-
-      - name: Trivy fallback scan (Method 3 - Filesystem only)
-        if: steps.fallback2.outputs.fallback2_success != 'true' && steps.fallback1.outputs.fallback1_success != 'true' && steps.check_trivy.outputs.trivy_failed == 'true' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
-        run: |
-          echo "🔄 Fallback Method 3: Filesystem-only scan (最終手段)..."
-          
-          # コンテナを一時的に起動してファイルシステムをマウント
-          CONTAINER_ID=$(docker create ${{ env.FULL_IMAGE_NAME }})
-          docker export $CONTAINER_ID > /tmp/container-fs.tar
-          docker rm $CONTAINER_ID
-          
-          mkdir -p /tmp/container-fs
-          tar -xf /tmp/container-fs.tar -C /tmp/container-fs
-          
-          # ファイルシステムをスキャン
-          docker run --rm \
-            -v /tmp/container-fs:/scan:ro \
-            -v ${{ github.workspace }}:/output \
-            aquasec/trivy:0.56.1 \
-            filesystem \
-            /scan \
-            --format sarif \
-            --output /output/trivy-fb3.sarif \
-            --severity CRITICAL,HIGH \
-            --ignore-unfixed \
-            --scanners vuln \
-            --timeout 10m || echo "Method 3 failed"
-          
-          if [ -f trivy-fb3.sarif ] && [ -s trivy-fb3.sarif ]; then
-            mv trivy-fb3.sarif trivy-results.sarif
-            echo "✅ Method 3 succeeded"
-            echo "fallback3_success=true" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ All scan methods failed"
-            echo "fallback3_success=false" >> $GITHUB_OUTPUT
-          fi
-          
-          # クリーンアップ
-          rm -rf /tmp/container-fs /tmp/container-fs.tar
-        id: fallback3
-        continue-on-error: true
-
-      - name: Create minimal SARIF if all scans failed
-        if: |
-          (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && 
-          steps.check_trivy.outputs.trivy_failed == 'true' &&
-          steps.fallback1.outputs.fallback1_success != 'true' &&
-          steps.fallback2.outputs.fallback2_success != 'true' &&
-          steps.fallback3.outputs.fallback3_success != 'true'
-        run: |
-          echo "⚠️ Creating minimal SARIF (all scan methods failed)"
-          cat > trivy-results.sarif <<'EOFMARKER'
-          {
-            "version": "2.1.0",
-            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-            "runs": [{
-              "tool": {
-                "driver": {
-                  "name": "Trivy",
-                  "informationUri": "https://github.com/aquasecurity/trivy",
-                  "fullName": "Trivy Vulnerability Scanner",
-                  "version": "scan-unavailable"
-                }
-              },
-              "results": [],
-              "invocations": [{
-                "executionSuccessful": false,
-                "toolExecutionNotifications": [{
-                  "level": "warning",
-                  "message": {
-                    "text": "Image scan failed after multiple retry attempts. Manual review recommended."
-                  }
-                }]
-              }]
-            }]
-          }
-          EOFMARKER
         continue-on-error: true
 
       - name: Sign image
