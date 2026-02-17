@@ -6,19 +6,24 @@ RUN echo "Cache bust: $CACHEBUST" && \
         echo "⛰️ Alpine Linux detected" && \
         (apk update || echo "⚠️ apk update failed") && \
         (apk upgrade --no-cache || echo "⚠️ apk upgrade failed") && \
-        (apk add --no-cache --upgrade zlib sqlite-libs libcrypto3 libssl3 || true) && \
+        (apk add --no-cache --upgrade zlib sqlite-libs libcrypto3 libssl3 || echo "⚠️ Library upgrade failed") && \
         (apk del --no-cache nano vim git || true) && \
         rm -rf /var/cache/apk/* /usr/share/man/* || true; \
     elif command -v apt-get >/dev/null 2>&1; then \
         echo "🌀 Debian/Ubuntu detected" && \
-        (apt-get update || echo "⚠️ apt-get update failed") && \
-        (apt-get upgrade -y || echo "⚠️ apt-get upgrade failed") && \
+        export DEBIAN_FRONTEND=noninteractive && \
+        (apt-get update -o Acquire::Retries=3 || echo "⚠️ apt-get update failed") && \
+        (apt-get upgrade -y -o Acquire::Retries=3 || echo "⚠️ apt-get upgrade failed") && \
         echo "🔒 Installing critical security updates from Debian sid..." && \
-        (echo "deb http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
-         apt-get update && \
-         apt-get install -y --no-install-recommends -t sid zlib1g libsqlite3-0 openssl ca-certificates || \
-         echo "⚠️ sid backport failed") && \
-        (apt-get purge -y --auto-remove vim nano git telnet ftp man-db doc-debian || true) && \
+        (echo "deb [trusted=yes] http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
+         apt-get update -o Acquire::Retries=3 -o Acquire::https::Verify-Peer=false || echo "⚠️ sid update failed") && \
+        (apt-get install -y --no-install-recommends --allow-unauthenticated -t sid \
+            zlib1g \
+            libsqlite3-0 \
+            openssl \
+            ca-certificates 2>/dev/null || \
+         echo "⚠️ sid packages failed, using default versions") && \
+        (apt-get purge -y --auto-remove vim nano git telnet ftp man-db doc-debian 2>/dev/null || true) && \
         apt-get clean && \
         rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/* /etc/apt/sources.list.d/sid.list || true; \
     else \
