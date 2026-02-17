@@ -1,28 +1,137 @@
 # --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---
 ARG CACHEBUST=1
-RUN echo "Cache bust: $CACHEBUST" && \
+
+# ========================================
+# Stage 1: Go Binary Rebuilder (Optional)
+# ========================================
+FROM golang:1.26-bookworm AS go-rebuilder
+WORKDIR /rebuild
+
+# Detect and rebuild Go binaries with latest Go runtime
+RUN echo "🔍 Scanning for Go binaries to rebuild..." && \
+    mkdir -p /rebuild/bin && \
+    GO_BINARIES="" && \
+    \
+    # CrowdSec detection and rebuild
+    if command -v cscli >/dev/null 2>&1 || [ -f /usr/local/bin/cscli ]; then \
+        echo "🛡️ CrowdSec detected - rebuilding..." && \
+        apt-get update && apt-get install -y git ca-certificates && \
+        git clone --depth 1 --branch v1.6.4 https://github.com/crowdsecurity/crowdsec.git && \
+        cd crowdsec && make build && \
+        cp cmd/crowdsec/crowdsec /rebuild/bin/ 2>/dev/null || true && \
+        cp cmd/crowdsec-cli/cscli /rebuild/bin/ 2>/dev/null || true && \
+        cd .. && rm -rf crowdsec && \
+        GO_BINARIES="crowdsec cscli"; \
+    fi && \
+    \
+    # Tailscale detection and rebuild
+    if command -v tailscaled >/dev/null 2>&1 || [ -f /usr/local/bin/tailscaled ]; then \
+        echo "🔵 Tailscale detected - rebuilding..." && \
+        apt-get update && apt-get install -y git ca-certificates && \
+        git clone --depth 1 --branch v1.78.3 https://github.com/tailscale/tailscale.git && \
+        cd tailscale && \
+        go build -o /rebuild/bin/tailscaled ./cmd/tailscaled && \
+        go build -o /rebuild/bin/tailscale ./cmd/tailscale && \
+        go build -o /rebuild/bin/containerboot ./cmd/containerboot 2>/dev/null || true && \
+        cd .. && rm -rf tailscale && \
+        GO_BINARIES="$GO_BINARIES tailscaled tailscale containerboot"; \
+    fi && \
+    \
+    # gosu detection and rebuild
+    if command -v gosu >/dev/null 2>&1 || [ -f /usr/local/bin/gosu ]; then \
+        echo "👤 gosu detected - rebuilding..." && \
+        apt-get update && apt-get install -y git ca-certificates && \
+        git clone --depth 1 --branch 1.17 https://github.com/tianon/gosu.git && \
+        cd gosu && \
+        go build -o /rebuild/bin/gosu . && \
+        cd .. && rm -rf gosu && \
+        GO_BINARIES="$GO_BINARIES gosu"; \
+    fi && \
+    \
+    # yq detection and rebuild
+    if command -v yq >/dev/null 2>&1 || [ -f /usr/local/bin/yq ]; then \
+        echo "📝 yq detected - rebuilding..." && \
+        apt-get update && apt-get install -y git ca-certificates && \
+        git clone --depth 1 --branch v4.44.3 https://github.com/mikefarah/yq.git && \
+        cd yq && \
+        go build -o /rebuild/bin/yq . && \
+        cd .. && rm -rf yq && \
+        GO_BINARIES="$GO_BINARIES yq"; \
+    fi && \
+    \
+    echo "✅ Go binaries rebuilt: $GO_BINARIES" && \
+    ls -lh /rebuild/bin/ || echo "⚠️ No Go binaries detected in this image"
+
+# ========================================
+# Stage 2: Main Hardening
+# ========================================
+FROM scratch AS final
+# This is a placeholder - actual base image will be inherited
+
+RUN echo "Cache bust: ${CACHEBUST:-1}" && \
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH" && \
+    \
+    # ========================================
+    # Package Manager Detection
+    # ========================================
     if command -v apk >/dev/null 2>&1; then \
         echo "⛰️ Alpine Linux detected" && \
-        (apk update || echo "⚠️ apk update failed, skipping") && \
-        (apk upgrade --no-cache || echo "⚠️ apk upgrade failed, skipping") && \
-        (apk add --no-cache --upgrade zlib sqlite-libs || echo "⚠️ Critical library upgrade failed") && \
+        \
+        # Update all packages
+        (apk update || echo "⚠️ apk update failed") && \
+        (apk upgrade --no-cache || echo "⚠️ apk upgrade failed") && \
+        \
+        # Critical security libraries
+        echo "🔒 Installing critical security updates..." && \
+        (apk add --no-cache --upgrade zlib sqlite-libs libcrypto3 libssl3 || \
+         echo "⚠️ Some library upgrades failed") && \
+        \
+        # Remove unnecessary tools
         (apk del --no-cache nano vim git || true) && \
         rm -rf /var/cache/apk/* /usr/share/man/* || true; \
+        \
     elif command -v apt-get >/dev/null 2>&1; then \
         echo "🌀 Debian/Ubuntu detected" && \
-        (apt-get update || echo "⚠️ apt-get update failed, skipping") && \
-        (apt-get upgrade -y || echo "⚠️ apt-get upgrade failed, skipping") && \
+        \
+        # Update all packages
+        (apt-get update || echo "⚠️ apt-get update failed") && \
+        (apt-get upgrade -y || echo "⚠️ apt-get upgrade failed") && \
+        \
+        # Critical security libraries from sid
         echo "🔒 Installing critical security updates from Debian sid..." && \
         (echo "deb http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
          apt-get update && \
-         apt-get install -y --no-install-recommends -t sid zlib1g libsqlite3-0 || \
+         apt-get install -y --no-install-recommends -t sid \
+            zlib1g \
+            libsqlite3-0 \
+            openssl \
+            ca-certificates || \
          echo "⚠️ sid backport failed, using default versions") && \
+        \
+        # Remove unnecessary tools
         (apt-get purge -y --auto-remove vim nano git telnet ftp man-db doc-debian || true) && \
         apt-get clean && \
         rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/* /etc/apt/sources.list.d/sid.list || true; \
+        \
     else \
-        echo "⚠️ No supported package manager found. Skipping hardening steps." && \
-        true; \
-    fi
+        echo "⚠️ No supported package manager found. Skipping hardening steps."; \
+    fi && \
+    \
+    # ========================================
+    # Copy rebuilt Go binaries (if available)
+    # ========================================
+    echo "🔄 Attempting to replace Go binaries with rebuilt versions..." && \
+    for binary in crowdsec cscli tailscaled tailscale containerboot gosu yq; do \
+        if [ -f "/rebuild/bin/$binary" ]; then \
+            TARGET_PATH=$(command -v $binary 2>/dev/null || echo "/usr/local/bin/$binary") && \
+            cp -f "/rebuild/bin/$binary" "$TARGET_PATH" 2>/dev/null && \
+            chmod +x "$TARGET_PATH" && \
+            echo "✅ Replaced: $binary" || \
+            echo "⚠️ Failed to replace: $binary (using original)"; \
+        fi; \
+    done && \
+    rm -rf /rebuild 2>/dev/null || true && \
+    \
+    echo "🎉 Hardening completed!"
+
 # --- COMMON HARDENING END ---
