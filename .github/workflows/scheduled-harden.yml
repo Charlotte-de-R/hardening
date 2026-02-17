@@ -136,7 +136,7 @@ jobs:
 
       - name: Check Trivy scan result
         id: check_trivy
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
+        if: always() && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
         run: |
           if [ ! -f trivy-results.sarif ] || [ ! -s trivy-results.sarif ]; then
             echo "trivy_failed=true" >> $GITHUB_OUTPUT
