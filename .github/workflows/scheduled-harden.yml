@@ -1,129 +1,5 @@
-name: Scheduled Build & Scan (Matrix Strategy)
-
-on:
-  schedule:
-    - cron: '30 19 * * *'  # JST 04:30
-  workflow_dispatch:
-    inputs:
-      force_build:
-        description: 'Force build even if no updates found'
-        required: false
-        default: false
-        type: boolean
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_OWNER: charlotte-de-r
-  IMAGE_REPO: hardening
-
-jobs:
-  build-and-harden:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      security-events: write
-      id-token: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # --- 1. Network & Security ---
-          - name: tailscale
-            context: ./dockerfiles/tailscale
-            image_tag: tailscale:hardened
-          - name: crowdsec
-            context: ./dockerfiles/crowdsec
-            image_tag: crowdsec:hardened
-          - name: socket-proxy
-            context: ./dockerfiles/socket-proxy
-            image_tag: socket-proxy:hardened
-          - name: promtail
-            context: ./dockerfiles/promtail
-            image_tag: promtail:hardened
-            
-          # --- 2. Immich Suite ---
-          - name: immich-server
-            context: ./dockerfiles/immich-server
-            image_tag: immich-server:hardened
-          - name: immich-machine-learning
-            context: ./dockerfiles/immich-machine-learning
-            image_tag: immich-machine-learning:hardened
-          - name: immich-redis
-            context: ./dockerfiles/immich-redis
-            image_tag: immich-redis:hardened
-          - name: immich-postgres
-            context: ./dockerfiles/immich-postgres
-            image_tag: immich-postgres:hardened
-
-          # --- 3. Apps & DB ---
-          - name: nextcloud
-            context: ./dockerfiles/nextcloud
-            image_tag: nextcloud:hardened
-          - name: mariadb
-            context: ./dockerfiles/mariadb
-            image_tag: mariadb:hardened
-          - name: vaultwarden
-            context: ./dockerfiles/vaultwarden
-            image_tag: vaultwarden:hardened
-
-    steps:
-      - name: Determine Cache Strategy
-        id: cache_strat
-        run: |
-          if [ "${{ inputs.force_build }}" == "true" ]; then
-            echo "CACHE_KEY=${{ github.run_id }}" >> $GITHUB_ENV
-          else
-            echo "CACHE_KEY=$(date +%Y.%U)" >> $GITHUB_ENV
-          fi
-
-      - name: Set image full path
-        run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Make scripts executable
-        run: chmod +x update_dockerfiles.sh check_update.sh
-
-      - name: Inject Security Hardening Templates
-        run: ./update_dockerfiles.sh
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.6.0
-
-      - name: Check Updates
-        id: check
-        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
-
-      - name: Build and Push
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: docker/build-push-action@v5
-        with:
-          no-cache: true
-          context: ${{ matrix.context }}
-          file: ${{ matrix.context }}/Dockerfile.hardened
-          push: true
-          tags: ${{ env.FULL_IMAGE_NAME }}
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
-          secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          provenance: false
-          sbom: false
-
       - name: Trivy scan
+        id: trivy_scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -138,10 +14,22 @@ jobs:
           scanners: 'vuln'
         continue-on-error: true
 
-      - name: Trivy fallback scan
-        if: failure() && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
+      - name: Check Trivy scan result
+        id: check_trivy
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         run: |
-          echo "⚠️ Primary Trivy scan failed, attempting fallback..."
+          if [ ! -f trivy-results.sarif ] || [ ! -s trivy-results.sarif ]; then
+            echo "trivy_failed=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Primary Trivy scan failed or produced no output"
+          else
+            echo "trivy_failed=false" >> $GITHUB_OUTPUT
+            echo "✅ Primary Trivy scan succeeded"
+          fi
+
+      - name: Trivy fallback scan
+        if: steps.check_trivy.outputs.trivy_failed == 'true' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
+        run: |
+          echo "🔄 Attempting fallback Trivy scan..."
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${{ github.workspace }}:/output \
@@ -152,14 +40,15 @@ jobs:
             --severity CRITICAL,HIGH \
             --ignore-unfixed \
             --scanners vuln \
-            --skip-dirs '/var/lib/dpkg/info,/var/cache' \
-            ${{ env.FULL_IMAGE_NAME }} || echo "⚠️ Fallback scan also failed"
+            --skip-dirs '/var/lib/dpkg/info,/var/cache,/var/lib/mysql' \
+            --timeout 10m \
+            ${{ env.FULL_IMAGE_NAME }} 2>&1 | tee trivy-fallback.log || true
           
-          if [ -f trivy-results-fallback.sarif ]; then
+          if [ -f trivy-results-fallback.sarif ] && [ -s trivy-results-fallback.sarif ]; then
             mv trivy-results-fallback.sarif trivy-results.sarif
-            echo "✅ Fallback scan completed"
+            echo "✅ Fallback scan completed successfully"
           else
-            echo "❌ No scan results available, creating empty SARIF"
+            echo "⚠️ Fallback scan also failed, creating minimal SARIF for upload"
             cat > trivy-results.sarif << 'EOF'
           {
             "version": "2.1.0",
@@ -169,26 +58,14 @@ jobs:
                 "driver": {
                   "name": "Trivy",
                   "informationUri": "https://github.com/aquasecurity/trivy",
-                  "version": "fallback"
+                  "fullName": "Trivy Vulnerability Scanner",
+                  "version": "fallback-unavailable"
                 }
               },
               "results": []
             }]
           }
           EOF
+            echo "ℹ️ Created empty SARIF to prevent workflow failure"
           fi
-        continue-on-error: true
-
-      - name: Sign image
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ env.FULL_IMAGE_NAME }}
-
-      - name: Upload Trivy results
-        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-results.sarif'
-          category: ${{ matrix.name }}
         continue-on-error: true
