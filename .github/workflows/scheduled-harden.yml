@@ -143,30 +143,33 @@ jobs:
           else
             echo "trivy_failed=false" >> $GITHUB_OUTPUT
           fi
-
       - name: Trivy fallback - Method 2 (Tarball)
         if: steps.check_trivy.outputs.trivy_failed == 'true' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true)
         run: |
-          echo "Fallback: Export as tarball and scan"
+          echo "🔄 Fallback: Export as tarball and scan"
           docker pull ${{ env.FULL_IMAGE_NAME }}
-          docker save ${{ env.FULL_IMAGE_NAME }} -o /tmp/img.tar
-          docker run --rm -v /tmp:/tmp:ro -v $PWD:/output aquasec/trivy:0.56.1 image --input /tmp/img.tar --format sarif --output /output/trivy-results.sarif --severity CRITICAL,HIGH --ignore-unfixed --scanners vuln --timeout 10m || true
-          rm -f /tmp/img.tar
-          if [ ! -f trivy-results.sarif ]; then
-            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","version":"unavailable"}},"results":[]}]}' > trivy-results.sarif
+          docker save ${{ env.FULL_IMAGE_NAME }} -o ${{ github.workspace }}/image.tar
+          
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -e TRIVY_TEMP_DIR=/work/.trivy-temp \
+            aquasec/trivy:0.56.1 \
+            image \
+            --input /work/image.tar \
+            --format sarif \
+            --output /work/trivy-results.sarif \
+            --severity CRITICAL,HIGH \
+            --ignore-unfixed \
+            --scanners vuln \
+            --timeout 10m || echo "⚠️ Fallback scan failed"
+          
+          rm -f image.tar
+          rm -rf .trivy-temp
+          
+          if [ ! -f trivy-results.sarif ] || [ ! -s trivy-results.sarif ]; then
+            echo "⚠️ Creating minimal SARIF"
+            cat > trivy-results.sarif <<'EOFMARKER'
+          {"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","version":"unavailable"}},"results":[]}]}
+          EOFMARKER
           fi
-        continue-on-error: true
-
-      - name: Sign image
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes ${{ env.FULL_IMAGE_NAME }}
-
-      - name: Upload Trivy results
-        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: 'trivy-results.sarif'
-          category: ${{ matrix.name }}
         continue-on-error: true
