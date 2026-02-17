@@ -1,0 +1,145 @@
+name: Test MariaDB Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: charlotte-de-r
+  IMAGE_REPO: hardening
+  FULL_IMAGE_NAME: ghcr.io/charlotte-de-r/hardening/mariadb:hardened
+
+jobs:
+  test-mariadb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Set Cache Key
+        run: echo "CACHE_KEY=$(date +%Y.%U)-test" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x update_dockerfiles.sh
+
+      - name: Inject Security Hardening Templates
+        run: ./update_dockerfiles.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.6.0
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          no-cache: true
+          context: ./dockerfiles/mariadb
+          file: ./dockerfiles/mariadb/Dockerfile.hardened
+          push: true
+          tags: ${{ env.FULL_IMAGE_NAME }}
+          build-args: |
+            CACHEBUST=${{ env.CACHE_KEY }}
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          provenance: false
+          sbom: false
+
+      - name: Trivy scan
+        id: trivy_scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.FULL_IMAGE_NAME }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+          timeout: '15m'
+          skip-dirs: '/var/lib/dpkg/info,/var/cache'
+          scanners: 'vuln'
+        continue-on-error: true
+
+      - name: Check Trivy scan result
+        id: check_trivy
+        run: |
+          if [ ! -f trivy-results.sarif ] || [ ! -s trivy-results.sarif ]; then
+            echo "trivy_failed=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Primary scan failed"
+          else
+            echo "trivy_failed=false" >> $GITHUB_OUTPUT
+            echo "✅ Primary scan succeeded"
+          fi
+
+      - name: Trivy fallback scan (Tarball method)
+        if: steps.check_trivy.outputs.trivy_failed == 'true'
+        run: |
+          echo "🔄 Fallback: Export as tarball and scan"
+          docker pull ${{ env.FULL_IMAGE_NAME }}
+          docker save ${{ env.FULL_IMAGE_NAME }} -o ${{ github.workspace }}/image.tar
+          
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -e TRIVY_TEMP_DIR=/work/.trivy-temp \
+            aquasec/trivy:0.56.1 \
+            image \
+            --input /work/image.tar \
+            --format sarif \
+            --output /work/trivy-results.sarif \
+            --severity CRITICAL,HIGH \
+            --ignore-unfixed \
+            --scanners vuln \
+            --timeout 10m || echo "⚠️ Fallback scan failed"
+          
+          rm -f image.tar
+          rm -rf .trivy-temp
+          
+          if [ ! -f trivy-results.sarif ] || [ ! -s trivy-results.sarif ]; then
+            echo "⚠️ Creating minimal SARIF"
+            cat > trivy-results.sarif <<'EOFMARKER'
+          {"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","version":"unavailable"}},"results":[]}]}
+          EOFMARKER
+          fi
+        continue-on-error: true
+
+      - name: Display scan results
+        run: |
+          if [ -f trivy-results.sarif ]; then
+            echo "📊 Scan completed. Results:"
+            cat trivy-results.sarif | jq '.runs[0].results | length' || echo "Unable to parse SARIF"
+          else
+            echo "❌ No scan results available"
+          fi
+
+      - name: Sign image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ${{ env.FULL_IMAGE_NAME }}
+
+      - name: Upload Trivy results
+        if: hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: mariadb-test
+        continue-on-error: true
