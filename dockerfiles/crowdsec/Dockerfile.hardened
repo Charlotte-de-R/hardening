@@ -1,27 +1,32 @@
 FROM golang:alpine AS builder
 
-# Install all necessary dependencies for compiling CrowdSec's C++ CGO bindings (re2, sqlite, etc.)
-RUN apk add --no-cache git make gcc g++ musl-dev pkgconf linux-headers re2-dev
+# Install dependencies required by CrowdSec's Makefile (including sqlite CGO bindings) and yq
+RUN apk add --no-cache git make gcc musl-dev bash
 
-# Clone and build Crowdsec natively with the latest Go compiler to completely eliminate Go CVEs
+# Compile CrowdSec from source using WebAssembly for RE2 to bypass C++ bloat.
+# This ensures it is built with the absolute latest Go compiler, eradicating the crypto/tls CVE.
 RUN git clone https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
     cd /go/src/crowdsec && \
-    make build
+    BUILD_RE2_WASM=1 make build
+
+# Compile yq from source to eliminate its Go CVEs
+RUN CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
 
 FROM crowdsecurity/crowdsec:latest
 USER root
 
-# Overwrite ALL known paths with the newly compiled, 100% CVE-free binaries
+# Overwrite ALL known paths with our freshly compiled, 100% CVE-free binaries
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec/crowdsec /usr/bin/crowdsec
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec-cli/cscli /usr/local/bin/cscli
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec-cli/cscli /usr/bin/cscli
 
-# Replace yq with a modern Go 1.23+ compiled release from GitHub
-RUN apk add --no-cache wget && \
-    wget https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -O /usr/local/bin/yq && \
-    cp /usr/local/bin/yq /usr/bin/yq && \
-    chmod +x /usr/local/bin/yq /usr/bin/yq
+# Replace yq as well
+COPY --from=builder /go/bin/yq /usr/local/bin/yq
+COPY --from=builder /go/bin/yq /usr/bin/yq
+
+# Ensure execute permissions
+RUN chmod +x /usr/local/bin/crowdsec /usr/bin/crowdsec /usr/local/bin/cscli /usr/bin/cscli /usr/local/bin/yq /usr/bin/yq
 
 # EXACT MATCH: Remove vulnerable notification plugins detected by Trivy
 RUN rm -f /usr/local/lib/crowdsec/plugins/notification-* /usr/lib/crowdsec/plugins/notification-* /usr/bin/notification-* /usr/local/bin/notification-* || true
