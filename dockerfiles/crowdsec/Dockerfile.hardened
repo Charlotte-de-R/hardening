@@ -1,8 +1,18 @@
 FROM crowdsecurity/crowdsec:latest
 USER root
 
+# Upgrade CrowdSec binaries to latest static release to eliminate Go CVEs
+RUN apk add --no-cache wget tar && \
+    wget https://github.com/crowdsecurity/crowdsec/releases/download/v1.7.6/crowdsec-release.tgz && \
+    tar xzf crowdsec-release.tgz && \
+    cp crowdsec-v1.7.6/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec && \
+    cp crowdsec-v1.7.6/cmd/crowdsec-cli/cscli /usr/local/bin/cscli && \
+    wget https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -O /usr/local/bin/yq && \
+    chmod +x /usr/local/bin/crowdsec /usr/local/bin/cscli /usr/local/bin/yq && \
+    rm -rf crowdsec*
+
 # Remove vulnerable notification plugins correctly
-RUN rm -f /usr/local/bin/notification-* /usr/bin/notification-* || true
+RUN rm -rf /usr/local/lib/crowdsec/plugins/notification-* /usr/bin/notification-* /usr/local/bin/notification-* || true
 
 # Hardening:
 # 1. apk update & upgrade: ベースOSの全パッケージ更新
