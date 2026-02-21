@@ -1,11 +1,19 @@
 FROM crowdsecurity/crowdsec:latest
 USER root
 
-# Upgrade CrowdSec core binaries using the official install script to eliminate Go CVEs
-RUN apk add --no-cache curl bash && \
-    curl -s https://install.crowdsec.net | bash && \
-    apk update && \
-    apk add --no-cache --upgrade crowdsec crowdsec-custom-bouncer
+# Upgrade CrowdSec core binaries to latest static release to eliminate Go CVEs
+RUN apk add --no-cache wget tar && \
+    wget https://github.com/crowdsecurity/crowdsec/releases/download/v1.7.6/crowdsec-release.tgz && \
+    tar xzf crowdsec-release.tgz && \
+    # Overwrite all possible target paths with the new binaries
+    cp crowdsec-v1.7.6/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec && \
+    cp crowdsec-v1.7.6/cmd/crowdsec/crowdsec /usr/bin/crowdsec && \
+    cp crowdsec-v1.7.6/cmd/crowdsec-cli/cscli /usr/local/bin/cscli && \
+    cp crowdsec-v1.7.6/cmd/crowdsec-cli/cscli /usr/bin/cscli && \
+    wget https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -O /usr/local/bin/yq && \
+    cp /usr/local/bin/yq /usr/bin/yq && \
+    chmod +x /usr/local/bin/crowdsec /usr/local/bin/cscli /usr/local/bin/yq /usr/bin/crowdsec /usr/bin/cscli /usr/bin/yq && \
+    rm -rf crowdsec*
 
 # EXACT MATCH: Remove vulnerable notification plugins detected by Trivy
 RUN rm -f /usr/local/lib/crowdsec/plugins/notification-* /usr/lib/crowdsec/plugins/notification-* /usr/bin/notification-* /usr/local/bin/notification-* || true
