@@ -1,10 +1,14 @@
-FROM redis:6.2-alpine
+FROM golang:1.24-alpine AS builder
+# Recompile gosu to eliminate Go CVEs
+RUN apk add --no-cache git && \
+    CGO_ENABLED=0 go install github.com/tianon/gosu@latest
 
+FROM redis:6.2-alpine
 USER root
+# COPY the freshly built gosu binary
+COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
 
 # Hardening Step 1: ベースOSとライブラリの強制更新
-# - apk upgrade: 全体更新
-# - explicit upgrade: 暗号化ライブラリ(libcrypto/libssl)と圧縮ライブラリ(zlib)を最新化
 RUN apk update && \
     apk upgrade --no-cache && \
     apk add --no-cache --upgrade \
@@ -16,7 +20,6 @@ RUN apk update && \
     && rm -rf /var/cache/apk/*
 
 # Hardening Step 2: Gosu (Golang) の脆弱性修正
-# コンテナのエントリポイントで使用されるツール。
-# ベースイメージ同梱のものが古いため、最新版(1.17以降)をダウンロードして強制上書きします。
-ENV GOSU_VERSION 1.17
+# マルチステージビルドにより、最新の安全なGo 1.24でコンパイルされたバイナリに置き換え済み。
+
 # INSERT_HARDENING_HERE
