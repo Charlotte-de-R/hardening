@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 # Recompile gosu to eliminate Go CVEs
 RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install github.com/tianon/gosu@latest
