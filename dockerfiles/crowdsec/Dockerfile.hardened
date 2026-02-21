@@ -10,7 +10,7 @@ RUN git clone https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && 
     BUILD_RE2_WASM=1 make build
 
 # Compile yq from source to eliminate its Go CVEs
-RUN CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
+RUN GOTOOLCHAIN=auto CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
 
 FROM crowdsecurity/crowdsec:latest
 USER root
