@@ -1,6 +1,14 @@
+FROM golang:1.24-alpine AS builder
+# Recompile gosu to eliminate Go CVEs
+RUN apk add --no-cache git && \
+    CGO_ENABLED=0 go install github.com/tianon/gosu@latest
+
 FROM nextcloud:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# COPY the freshly built gosu binary
+COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
 
 ARG CACHEBUST=1
 ENV DEBIAN_FRONTEND=noninteractive
