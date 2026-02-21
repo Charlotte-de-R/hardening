@@ -5,8 +5,12 @@ RUN apk add --no-cache git && \
 
 FROM redis:6.2-alpine
 USER root
-# COPY the freshly built gosu binary
+# COPY the freshly built gosu binary to all possible target locations
 COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
+COPY --from=builder /go/bin/gosu /usr/bin/gosu
+COPY --from=builder /go/bin/gosu /usr/sbin/gosu
+COPY --from=builder /go/bin/gosu /sbin/gosu
+
 
 # Hardening Step 1: ベースOSとライブラリの強制更新
 RUN apk update && \
