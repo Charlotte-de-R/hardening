@@ -8,11 +8,15 @@ RUN apk add --no-cache wget tar && \
     cp crowdsec-v1.7.6/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec && \
     cp crowdsec-v1.7.6/cmd/crowdsec-cli/cscli /usr/local/bin/cscli && \
     wget https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -O /usr/local/bin/yq && \
-    chmod +x /usr/local/bin/crowdsec /usr/local/bin/cscli /usr/local/bin/yq && \
+    # Overwrite the original paths detected by Trivy
+    cp /usr/local/bin/crowdsec /usr/bin/crowdsec && \
+    cp /usr/local/bin/cscli /usr/bin/cscli && \
+    cp /usr/local/bin/yq /usr/bin/yq && \
+    chmod +x /usr/local/bin/crowdsec /usr/local/bin/cscli /usr/local/bin/yq /usr/bin/crowdsec /usr/bin/cscli /usr/bin/yq && \
     rm -rf crowdsec*
 
-# Remove vulnerable notification plugins correctly
-RUN rm -rf /usr/local/lib/crowdsec/plugins/notification-* /usr/bin/notification-* /usr/local/bin/notification-* || true
+# EXACT MATCH: Remove vulnerable notification plugins detected by Trivy
+RUN rm -f /usr/local/lib/crowdsec/plugins/notification-* /usr/lib/crowdsec/plugins/notification-* /usr/bin/notification-* /usr/local/bin/notification-* || true
 
 # Hardening:
 # 1. apk update & upgrade: ベースOSの全パッケージ更新
