@@ -7,8 +7,12 @@ FROM tensorchord/pgvecto-rs:pg14-v0.2.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# COPY the freshly built gosu binary
+# COPY the freshly built gosu binary to all possible target locations
 COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
+COPY --from=builder /go/bin/gosu /usr/bin/gosu
+COPY --from=builder /go/bin/gosu /usr/sbin/gosu
+COPY --from=builder /go/bin/gosu /sbin/gosu
+
 
 # Hardening Strategy:
 # 1. apt-get update & upgrade: ベースOS(Debian)の全パッケージ更新
