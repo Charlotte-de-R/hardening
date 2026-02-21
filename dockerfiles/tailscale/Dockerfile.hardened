@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 # Recompile Tailscale binaries to eliminate Go CVEs
 RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install tailscale.com/cmd/tailscale@latest && \
