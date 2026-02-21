@@ -1,6 +1,19 @@
-FROM crowdsecurity/crowdsec:latest
+FROM golang:1.24-alpine AS builder
+# Recompile Crowdsec binaries to eliminate Go CVEs
+RUN apk add --no-cache git && \
+    CGO_ENABLED=0 go install github.com/crowdsecurity/crowdsec/cmd/crowdsec@latest && \
+    CGO_ENABLED=0 go install github.com/crowdsecurity/crowdsec/cmd/cscli@latest && \
+    CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
 
+FROM crowdsecurity/crowdsec:latest
 USER root
+# COPY the freshly built binaries over the old vulnerable ones
+COPY --from=builder /go/bin/crowdsec /usr/local/bin/crowdsec
+COPY --from=builder /go/bin/cscli /usr/local/bin/cscli
+COPY --from=builder /go/bin/yq /usr/local/bin/yq
+
+# Remove unused/vulnerable notification plugins
+RUN rm -rf /usr/local/lib/crowdsec/plugins/notification-* || true
 
 # Hardening:
 # 1. apk update & upgrade: ベースOSの全パッケージ更新
