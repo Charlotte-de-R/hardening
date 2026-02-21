@@ -1,12 +1,16 @@
+FROM golang:alpine AS builder
+# Recompile gosu to eliminate Go CVEs
+RUN apk add --no-cache git && \
+    CGO_ENABLED=0 go install github.com/tianon/gosu@latest
+
 FROM ghcr.io/immich-app/immich-machine-learning:release
+USER root
 
-ENV DEBIAN_FRONTEND=noninteractive
+# COPY the freshly built gosu binary and forcibly map it to all known paths
+COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
+RUN ln -sf /usr/local/bin/gosu /usr/bin/gosu && \
+    ln -sf /usr/local/bin/gosu /usr/sbin/gosu && \
+    ln -sf /usr/local/bin/gosu /sbin/gosu
 
-# Hardening Strategy:
-# 1. apt-get update & upgrade: システム全体の更新
-# 2. Explicit Install: Trivyで指摘された、データ処理の要となるライブラリを強制的に最新版へ更新
-#    - zlib1g: 画像/動画の圧縮・展開時のバッファオーバーフロー対策
-#    - libsqlite3-0: 内部DB処理の脆弱性対策
-#    - libexpat1: XML/メタデータ解析時のNullポインタ参照対策
-#    - libglib2.0-0: 画像処理系ライブラリが依存する共通ライブラリの保護
+# Hardening:
 # INSERT_HARDENING_HERE
