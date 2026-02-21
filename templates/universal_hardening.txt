@@ -18,6 +18,7 @@ RUN echo "Cache bust: $CACHEBUST" && \
         (echo "deb [trusted=yes] http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
          apt-get update -o Acquire::Retries=3 || echo "⚠️ sid update failed") && \
         (apt-get install -y --no-install-recommends --allow-unauthenticated -t sid \
+            libc6 \
             zlib1g \
             libsqlite3-0 \
             openssl \
@@ -29,6 +30,18 @@ RUN echo "Cache bust: $CACHEBUST" && \
     else \
         echo "⚠️ No supported package manager. Skipping." && true; \
     fi && \
+    echo "📦 Upgrading Language Packages for Vulnerability Remediation..." && \
+    (if command -v npm >/dev/null 2>&1; then \
+        if [ -d /usr/src/app ] && [ -f /usr/src/app/package.json ]; then \
+            cd /usr/src/app && npm update tar glob systeminformation || true; \
+        else \
+            npm install -g tar glob systeminformation || true; \
+        fi; \
+    fi) && \
+    (if command -v pip >/dev/null 2>&1 || command -v pip3 >/dev/null 2>&1; then \
+        PIP_CMD=$(command -v pip || command -v pip3); \
+        $PIP_CMD install --upgrade --no-cache-dir wheel urllib3 python-multipart jaraco.context || true; \
+    fi) && \
     echo "🧹 Optimizing Docker layers for Trivy scanning..." && \
     (find /var/lib/dpkg -type f -name "*-old" -delete 2>/dev/null || true) && \
     (find /var/lib/apt/lists -type f -delete 2>/dev/null || true) && \
