@@ -7,11 +7,12 @@ FROM mariadb:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# COPY the freshly built gosu binary to all possible target locations
+# COPY the freshly built gosu binary and forcibly map it to all known paths
 COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
-COPY --from=builder /go/bin/gosu /usr/bin/gosu
-COPY --from=builder /go/bin/gosu /usr/sbin/gosu
-COPY --from=builder /go/bin/gosu /sbin/gosu
+RUN ln -sf /usr/local/bin/gosu /usr/bin/gosu && \
+    ln -sf /usr/local/bin/gosu /usr/sbin/gosu && \
+    ln -sf /usr/local/bin/gosu /sbin/gosu
+
 
 
 ARG CACHEBUST=1
