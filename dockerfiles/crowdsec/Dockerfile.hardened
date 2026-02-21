@@ -1,8 +1,8 @@
 FROM crowdsecurity/crowdsec:latest
 USER root
 
-# Remove unused/vulnerable notification plugins to reduce attack surface
-RUN rm -rf /usr/local/lib/crowdsec/plugins/notification-* || true
+# Remove vulnerable notification plugins correctly
+RUN rm -f /usr/local/bin/notification-* /usr/bin/notification-* || true
 
 # Hardening:
 # 1. apk update & upgrade: ベースOSの全パッケージ更新
