@@ -1,13 +1,37 @@
-FROM quay.io/cilium/tetragon:v1.6.0
+# Stage 1: 最新Goコンパイラでバイナリを再ビルド (crypto/tls CVE解消)
+FROM golang:alpine AS builder
 
-# Tetragon は scratch ベースの Go 静的バイナリ。
-# apt/apk は存在しないが、パイプラインの一貫性のため
-# ハードニングテンプレートマーカーを含める。
-# (テンプレートは "No supported package manager. Skipping." で安全にスキップされる)
+RUN apk add --no-cache git make
+
+# Tetragonソースを取得 (v1.6.0 タグ)
+RUN git clone --depth 1 --branch v1.6.0 https://github.com/cilium/tetragon.git /go/src/tetragon
+
+WORKDIR /go/src/tetragon
+
+# tetragon エージェントをビルド
+RUN CGO_ENABLED=0 GOARCH=amd64 go build -mod=vendor \
+    -ldflags "-s -w -X 'github.com/cilium/tetragon/pkg/version.Version=v1.6.0'" \
+    -o /go/bin/tetragon ./cmd/tetragon/
+
+# tetra CLI をビルド
+RUN CGO_ENABLED=0 GOARCH=amd64 go build -mod=vendor \
+    -ldflags "-s -w" \
+    -o /go/bin/tetra ./cmd/tetra/
+
+# gops (プロセスデバッグツール) を最新ソースからビルド
+RUN CGO_ENABLED=0 go install github.com/google/gops@latest
+
+# Stage 2: 公式イメージのBPFプログラム + 再ビルド済みGoバイナリ
+FROM quay.io/cilium/tetragon:v1.6.0
 
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
 LABEL org.opencontainers.image.description="Tetragon - eBPF Security Observability (hardened)"
 LABEL org.opencontainers.image.base.name="quay.io/cilium/tetragon:v1.6.0"
+
+# CVE-freeバイナリで上書き
+COPY --from=builder /go/bin/tetragon /usr/bin/tetragon
+COPY --from=builder /go/bin/tetra /usr/bin/tetra
+COPY --from=builder /go/bin/gops /usr/bin/gops
 
 # Hardening:
 # INSERT_HARDENING_HERE
