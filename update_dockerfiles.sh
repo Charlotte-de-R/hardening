@@ -15,6 +15,8 @@ ALL_TARGETS=(
     "dockerfiles/socket-proxy/Dockerfile.hardened"
     "dockerfiles/tailscale/Dockerfile.hardened"
     "dockerfiles/promtail/Dockerfile.hardened"
+　  "dockerfiles/tetragon/Dockerfile.hardened"
+
 )
 
 echo "🔄 Injecting UNIVERSAL hardening templates..."
