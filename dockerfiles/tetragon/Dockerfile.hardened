@@ -1,0 +1,13 @@
+FROM quay.io/cilium/tetragon:v1.6.0
+
+# Tetragon は scratch ベースの Go 静的バイナリ。
+# apt/apk は存在しないが、パイプラインの一貫性のため
+# ハードニングテンプレートマーカーを含める。
+# (テンプレートは "No supported package manager. Skipping." で安全にスキップされる)
+
+LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
+LABEL org.opencontainers.image.description="Tetragon - eBPF Security Observability (hardened)"
+LABEL org.opencontainers.image.base.name="quay.io/cilium/tetragon:v1.6.0"
+
+# Hardening:
+# INSERT_HARDENING_HERE
