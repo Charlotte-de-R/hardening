@@ -62,6 +62,10 @@ jobs:
           - name: vaultwarden
             context: ./dockerfiles/vaultwarden
             image_tag: vaultwarden:hardened
+          - name: tetragon
+            context: ./dockerfiles/tetragon
+            image_tag: tetragon:hardened
+
 
     steps:
       - name: Determine Cache Strategy
