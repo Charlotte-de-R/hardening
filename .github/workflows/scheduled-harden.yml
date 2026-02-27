@@ -65,6 +65,9 @@ jobs:
           - name: tetragon
             context: ./dockerfiles/tetragon
             image_tag: tetragon:hardened
+          - name: portainer
+            context: ./dockerfiles/portainer
+            image_tag: portainer:hardened
 
 
     steps:
