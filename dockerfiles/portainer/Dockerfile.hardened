@@ -1,7 +1,7 @@
 # Stage 1: 最新Goコンパイラでバイナリを再ビルド (crypto/tls CVE解消)
 FROM golang:alpine AS builder
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git ca-certificates
 
 # Portainerソースを取得 (2.39.0 タグ)
 RUN git clone --depth 1 --branch 2.39.0 https://github.com/portainer/portainer.git /go/src/portainer
@@ -21,9 +21,6 @@ FROM portainer/portainer-ce:2.39.0
 
 # CVE-freeバイナリで上書き
 COPY --from=builder /go/bin/portainer /
-RUN apk update && \
-    apk add --no-cache ca-certificates && \
-    rm -rf /var/cache/apk/* /usr/share/man/* /usr/share/doc/* /tmp/* && \
-    # apk 自体を潰す (攻撃者がパッケージ追加できなくなる)
-    rm -f /sbin/apk && \
-    rm -rf /etc/apk /lib/apk /usr/share/apk
+
+# 最新CA証明書をbuilderからコピー (RUN不可のためCOPYで対応)
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
