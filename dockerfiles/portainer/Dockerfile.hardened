@@ -21,3 +21,9 @@ FROM portainer/portainer-ce:2.39.0
 
 # CVE-freeバイナリで上書き
 COPY --from=builder /go/bin/portainer /
+RUN apk update && \
+    apk add --no-cache ca-certificates && \
+    rm -rf /var/cache/apk/* /usr/share/man/* /usr/share/doc/* /tmp/* && \
+    # apk 自体を潰す (攻撃者がパッケージ追加できなくなる)
+    rm -f /sbin/apk && \
+    rm -rf /etc/apk /lib/apk /usr/share/apk
