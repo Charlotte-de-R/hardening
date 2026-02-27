@@ -1,5 +1,23 @@
-FROM portainer/portainer-ce:latest
+# Stage 1: 最新Goコンパイラでバイナリを再ビルド (crypto/tls CVE解消)
+FROM golang:alpine AS builder
 
-# Portainer is a statically compiled Go binary on minimal Alpine.
-# No OS-level package upgrades needed - they risk breaking the binary.
-# This Dockerfile exists solely to integrate into the Trivy + Cosign pipeline.
+RUN apk add --no-cache git
+
+# Portainerソースを取得 (2.39.0 タグ)
+RUN git clone --depth 1 --branch 2.39.0 https://github.com/portainer/portainer.git /go/src/portainer
+
+WORKDIR /go/src/portainer
+
+# Portainer バイナリをビルド (公式 build_binary.sh と同じフラグ)
+RUN cd api && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -trimpath \
+    --installsuffix cgo \
+    --ldflags "-s -w" \
+    -o /go/bin/portainer \
+    ./cmd/portainer/
+
+# Stage 2: 公式イメージのフロントエンド + 再ビルド済みGoバイナリ
+FROM portainer/portainer-ce:2.39.0
+
+# CVE-freeバイナリで上書き
+COPY --from=builder /go/bin/portainer /
