@@ -1,0 +1,5 @@
+FROM portainer/portainer-ce:latest
+
+# Portainer is a statically compiled Go binary on minimal Alpine.
+# No OS-level package upgrades needed - they risk breaking the binary.
+# This Dockerfile exists solely to integrate into the Trivy + Cosign pipeline.
