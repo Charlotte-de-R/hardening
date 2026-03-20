@@ -27,9 +27,9 @@ RUN CGO_ENABLED=0 go install github.com/google/gops@latest
 
 # Stage 2: 公式イメージのBPFプログラム + 再ビルド済みGoバイナリ
 FROM quay.io/cilium/tetragon:${TETRAGON_VERSION}
-# 変数を使う宣言
+# 変数を再宣言してLABELに埋め込む（ARGを追加し、既存のLABEL群に1行足す）
 ARG TETRAGON_VERSION
-
+LABEL org.opencontainers.image.version="${TETRAGON_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
 LABEL org.opencontainers.image.description="Tetragon - eBPF Security Observability (hardened)"
 LABEL org.opencontainers.image.base.name="quay.io/cilium/tetragon:${TETRAGON_VERSION}"
