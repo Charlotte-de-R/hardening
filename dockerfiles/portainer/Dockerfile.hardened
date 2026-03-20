@@ -21,6 +21,9 @@ RUN cd api && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 
 # Stage 2: 公式イメージのフロントエンド + 再ビルド済みGoバイナリ
 FROM portainer/portainer-ce:${PORTAINER_VERSION}
+# 変数を再宣言してLABELに埋め込む（この2行を追加！）
+ARG PORTAINER_VERSION
+LABEL org.opencontainers.image.version="${PORTAINER_VERSION}"
 
 COPY --from=builder /go/bin/portainer /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
