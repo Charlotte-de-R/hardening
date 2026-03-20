@@ -15,6 +15,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_OWNER: charlotte-de-r
   IMAGE_REPO: hardening
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-and-harden:
@@ -109,6 +110,29 @@ jobs:
         id: check
         run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
 
+      - name: Prepare Dynamic Build Args
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
+        run: |
+          {
+            echo 'DYNAMIC_BUILD_ARGS<<EOF'
+            echo "CACHEBUST=${{ env.CACHE_KEY }}"
+            
+            # Portainerがビルド対象の時だけ最新版を取得して追加
+            if [ "${{ matrix.name }}" == "portainer" ]; then
+              LATEST=$(curl -sL https://api.github.com/repos/portainer/portainer/releases/latest | jq -r .tag_name)
+              echo "PORTAINER_VERSION=$LATEST"
+              echo "💡 Portainerの最新バージョンを検出しました: $LATEST"
+            fi
+            
+            # Tetragonがビルド対象の時だけ最新版を取得して追加
+            if [ "${{ matrix.name }}" == "tetragon" ]; then
+              LATEST=$(curl -sL https://api.github.com/repos/cilium/tetragon/releases/latest | jq -r .tag_name)
+              echo "TETRAGON_VERSION=$LATEST"
+              echo "💡 Tetragonの最新バージョンを検出しました: $LATEST"
+            fi
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+
       - name: Build and Push
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v5
@@ -118,8 +142,7 @@ jobs:
           file: ${{ matrix.context }}/Dockerfile.hardened
           push: true
           tags: ${{ env.FULL_IMAGE_NAME }}
-          build-args: |
-            CACHEBUST=${{ env.CACHE_KEY }}
+          build-args: ${{ env.DYNAMIC_BUILD_ARGS }}
           secrets: |
             GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           provenance: false
