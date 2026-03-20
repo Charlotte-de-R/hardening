@@ -128,7 +128,7 @@ jobs:
       - name: Trivy scan
         id: trivy_scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.FULL_IMAGE_NAME }}
           format: 'sarif'
