@@ -15,8 +15,8 @@ env:
   REGISTRY: ghcr.io
   IMAGE_OWNER: charlotte-de-r
   IMAGE_REPO: hardening
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
 jobs:
   build-and-harden:
     runs-on: ubuntu-latest
