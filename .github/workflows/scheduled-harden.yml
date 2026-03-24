@@ -149,9 +149,10 @@ jobs:
       - name: Trivy scan
         id: trivy_scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7a47cd955dd89ce5a9fae0e5e59c8f83e1
         with:
           image-ref: ${{ env.FULL_IMAGE_NAME }}
+          trivy-version: '0.66.0'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
