@@ -153,7 +153,6 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.FULL_IMAGE_NAME }}
-          version: '0.66.0'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -163,6 +162,7 @@ jobs:
           skip-dirs: '/var/lib/dpkg/info,/var/cache'
           scanners: 'vuln'
         continue-on-error: true
+
 
       - name: Check Trivy scan result
         id: check_trivy
