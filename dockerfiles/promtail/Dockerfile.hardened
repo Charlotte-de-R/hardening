@@ -1,6 +1,11 @@
-FROM grafana/promtail:latest
+ARG APP_VERSION="latest"
 
+FROM grafana/promtail:${APP_VERSION}
 USER root
+
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
+
 
 ARG CACHEBUST=1
 
