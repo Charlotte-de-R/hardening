@@ -1,16 +1,17 @@
+ARG APP_VERSION="release"
+
 FROM golang:alpine AS builder
+ARG APP_VERSION
+
 # Recompile gosu to eliminate Go CVEs
 RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install github.com/tianon/gosu@latest
-
-ARG APP_VERSION="release"
 
 FROM ghcr.io/immich-app/immich-machine-learning:${APP_VERSION}
 USER root
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
-
 
 # COPY the freshly built gosu binary and forcibly map it to all known paths
 COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
