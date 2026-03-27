@@ -2,7 +2,6 @@ ARG APP_VERSION="latest"
 
 # Stage 1: 最新Goコンパイラでバイナリを再ビルド
 FROM golang:alpine AS builder
-# FROMの後に変数を使うと宣言
 ARG APP_VERSION
 
 RUN apk add --no-cache git ca-certificates
@@ -25,9 +24,9 @@ RUN cd api && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 
 # Stage 2: 公式イメージのフロントエンド + 再ビルド済みGoバイナリ
 FROM portainer/portainer-ce:${APP_VERSION}
-USER root
 
-# 変数を再宣言してLABELに埋め込む
+# 💡 ここにあった諸悪の根源 `USER root` を削除しました！
+
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 
