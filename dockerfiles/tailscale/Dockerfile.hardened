@@ -3,19 +3,20 @@ ARG APP_VERSION="latest"
 FROM golang:alpine AS builder
 ARG APP_VERSION
 
-# Recompile Tailscale binaries to eliminate Go CVEs
+# GitHubから指定バージョンの最新ソースを直接コンパイル (CVE排除)
 RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install tailscale.com/cmd/tailscale@${APP_VERSION} && \
     CGO_ENABLED=0 go install tailscale.com/cmd/tailscaled@${APP_VERSION} && \
     CGO_ENABLED=0 go install tailscale.com/cmd/containerboot@${APP_VERSION}
 
-FROM tailscale/tailscale:${APP_VERSION}
+# ベースイメージは公式のアップロード遅延を回避するため latest に固定
+FROM tailscale/tailscale:latest
 USER root
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 
-# COPY the freshly built binaries over the old vulnerable ones
+# 公式イメージの古いバイナリを、先ほどコンパイルしたての最新バイナリで上書き
 COPY --from=builder /go/bin/tailscale /usr/local/bin/tailscale
 COPY --from=builder /go/bin/tailscaled /usr/local/bin/tailscaled
 COPY --from=builder /go/bin/containerboot /usr/local/bin/containerboot
