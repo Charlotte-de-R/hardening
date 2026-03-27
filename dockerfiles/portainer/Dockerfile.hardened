@@ -1,29 +1,22 @@
-ARG PORTAINER_VERSION="2.39.0"
+ARG APP_VERSION="latest"
 
-# Stage 1: 最新Goコンパイラでバイナリを再ビルド
 FROM golang:alpine AS builder
-# FROMの後に変数を使うと宣言
-ARG PORTAINER_VERSION
+ARG APP_VERSION
 
 RUN apk add --no-cache git ca-certificates
+RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/portainer/portainer.git /go/src/portainer
 
-# 変数を使ってクローン
-RUN git clone --depth 1 --branch ${PORTAINER_VERSION} https://github.com/portainer/portainer.git /go/src/portainer
+# もし現在のDockerfileで、ここで make 等のビルドコマンドを実行している場合はそれを残してください
 
-WORKDIR /go/src/portainer
+FROM portainer/portainer-ce:${APP_VERSION}
+USER root
 
-RUN cd api && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -trimpath \
-    --installsuffix cgo \
-    --ldflags "-s -w" \
-    -o /go/bin/portainer \
-    ./cmd/portainer/
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
-# Stage 2: 公式イメージのフロントエンド + 再ビルド済みGoバイナリ
-FROM portainer/portainer-ce:${PORTAINER_VERSION}
-# 変数を再宣言してLABELに埋め込む（この2行を追加！）
-ARG PORTAINER_VERSION
-LABEL org.opencontainers.image.version="${PORTAINER_VERSION}"
+# もし現在のDockerfileで、ここで COPY しているバイナリ等があればそれを残してください
+
+# 👇 これ以降は現在の Hardening 処理をそのまま残してください
 
 COPY --from=builder /go/bin/portainer /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
