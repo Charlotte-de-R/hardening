@@ -1,25 +1,22 @@
+ARG APP_VERSION="latest"
+
 FROM golang:alpine AS builder
+ARG APP_VERSION
 
-# Install dependencies required by CrowdSec's Makefile (including sqlite CGO bindings) and yq
 RUN apk add --no-cache git make gcc musl-dev bash
-
-# Compile CrowdSec from source using WebAssembly for RE2 to bypass C++ bloat.
-# This ensures it is built with the absolute latest Go compiler, eradicating the crypto/tls CVE.
-RUN git clone https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
+RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
     cd /go/src/crowdsec && \
     BUILD_RE2_WASM=1 make build
 
-# Compile yq from source to eliminate its Go CVEs
-RUN GOTOOLCHAIN=auto CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
-
-FROM crowdsecurity/crowdsec:latest
+FROM crowdsecurity/crowdsec:${APP_VERSION}
 USER root
 
-# Overwrite ALL known paths with our freshly compiled, 100% CVE-free binaries
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
+
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec
-COPY --from=builder /go/src/crowdsec/cmd/crowdsec/crowdsec /usr/bin/crowdsec
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec-cli/cscli /usr/local/bin/cscli
-COPY --from=builder /go/src/crowdsec/cmd/crowdsec-cli/cscli /usr/bin/cscli
+
 
 # Replace yq as well
 COPY --from=builder /go/bin/yq /usr/local/bin/yq
