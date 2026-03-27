@@ -26,14 +26,12 @@ STRIP_V=false
 STRIP_PREFIX=""
 
 case "$IMAGE_NAME" in
-    "tailscale")    REPO="tailscale/tailscale"; STRIP_V=true ;; # 修正: vを消す
+    "tailscale")    REPO="tailscale/tailscale" ;; # 💡修正: Tailscaleはvが必要なので STRIP_V を外しました
     "crowdsec")     REPO="crowdsecurity/crowdsec" ;;
     "vaultwarden")  REPO="dani-garcia/vaultwarden"; STRIP_V=true ;;
     "immich-server"|"immich-machine-learning") REPO="immich-app/immich" ;;
     "tetragon")     REPO="cilium/tetragon" ;;
     "portainer")    REPO="portainer/portainer"; STRIP_V=true ;;
-    # 💡 Nextcloud, MariaDB, Socket-proxy, Promtail は GitHubタグとDockerタグが乖離するため
-    # API監視から外し、ベースイメージの latest 運用 + 週1強制ビルドに任せます。
 esac
 
 # ==========================================
@@ -42,10 +40,8 @@ esac
 if [ -n "$REPO" ]; then
     echo "🌐 Fetching latest release for $REPO..."
     
-    # Releases API で取得
     RAW_TAG=$(curl -sL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r .tag_name 2>/dev/null)
     
-    # Release機能を使っていないリポジトリの場合は Tags API を使用
     if [ "$RAW_TAG" == "null" ] || [ -z "$RAW_TAG" ]; then
         RAW_TAG=$(curl -sL "https://api.github.com/repos/${REPO}/tags" | jq -r '.[0].name' 2>/dev/null)
     fi
@@ -53,11 +49,9 @@ if [ -n "$REPO" ]; then
     if [ "$RAW_TAG" != "null" ] && [ -n "$RAW_TAG" ]; then
         LATEST_VER="$RAW_TAG"
         
-        # Docker Hub 等のタグ規則に合わせて表記揺れを吸収
         if [ "$STRIP_V" = true ]; then LATEST_VER="${LATEST_VER#v}"; fi
         if [ -n "$STRIP_PREFIX" ]; then LATEST_VER="${LATEST_VER#$STRIP_PREFIX}"; fi
         
-        # ★取得したバージョンをワークフロー側に渡す
         echo "latest_version=$LATEST_VER" >> $GITHUB_OUTPUT
         
         if [ "$MISSING_IMAGE" = true ]; then exit 0; fi
@@ -79,7 +73,7 @@ else
 fi
 
 # ==========================================
-# 4. OSパッケージの更新チェック (維持)
+# 4. OSパッケージの更新チェック
 # ==========================================
 CHECK_CMD='
 if [ -f /etc/alpine-release ]; then
