@@ -2,11 +2,9 @@ FROM golang:alpine AS builder
 # Recompile gosu to eliminate Go CVEs
 RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install github.com/tianon/gosu@latest
-
-ARG APP_VERSION="latest"
-
-FROM nextcloud:${APP_VERSION}
+FROM nextcloud:latest
 USER root
+# 👇 これ以降は現在の Hardening 処理
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
