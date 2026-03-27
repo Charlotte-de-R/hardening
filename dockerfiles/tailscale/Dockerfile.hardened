@@ -1,16 +1,25 @@
+ARG APP_VERSION="latest"
+
 FROM golang:alpine AS builder
+ARG APP_VERSION
+
 # Recompile Tailscale binaries to eliminate Go CVEs
 RUN apk add --no-cache git && \
-    CGO_ENABLED=0 go install tailscale.com/cmd/tailscale@latest && \
-    CGO_ENABLED=0 go install tailscale.com/cmd/tailscaled@latest && \
-    CGO_ENABLED=0 go install tailscale.com/cmd/containerboot@latest
+    CGO_ENABLED=0 go install tailscale.com/cmd/tailscale@${APP_VERSION} && \
+    CGO_ENABLED=0 go install tailscale.com/cmd/tailscaled@${APP_VERSION} && \
+    CGO_ENABLED=0 go install tailscale.com/cmd/containerboot@${APP_VERSION}
 
-FROM tailscale/tailscale:latest
+FROM tailscale/tailscale:${APP_VERSION}
 USER root
+
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
+
 # COPY the freshly built binaries over the old vulnerable ones
 COPY --from=builder /go/bin/tailscale /usr/local/bin/tailscale
 COPY --from=builder /go/bin/tailscaled /usr/local/bin/tailscaled
 COPY --from=builder /go/bin/containerboot /usr/local/bin/containerboot
+
 
 # Hardening Strategy:
 # 1. apk upgrade: Alpine Linux全体の更新
