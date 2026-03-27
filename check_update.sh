@@ -26,7 +26,7 @@ STRIP_V=false
 STRIP_PREFIX=""
 
 case "$IMAGE_NAME" in
-    "tailscale")    REPO="tailscale/tailscale" ;; # 💡修正: Tailscaleはvが必要なので STRIP_V を外しました
+    "tailscale")    REPO="tailscale/tailscale" ;;
     "crowdsec")     REPO="crowdsecurity/crowdsec" ;;
     "vaultwarden")  REPO="dani-garcia/vaultwarden"; STRIP_V=true ;;
     "immich-server"|"immich-machine-learning") REPO="immich-app/immich" ;;
@@ -40,10 +40,16 @@ esac
 if [ -n "$REPO" ]; then
     echo "🌐 Fetching latest release for $REPO..."
     
-    RAW_TAG=$(curl -sL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r .tag_name 2>/dev/null)
+    # 💡修正: GITHUB_TOKEN を使ってAPI制限(Rate Limit)を回避する
+    CURL_OPTS="-sL"
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        CURL_OPTS="-sL -H \"Authorization: Bearer $GITHUB_TOKEN\""
+    fi
+    
+    RAW_TAG=$(curl $CURL_OPTS "https://api.github.com/repos/${REPO}/releases/latest" | jq -r .tag_name 2>/dev/null)
     
     if [ "$RAW_TAG" == "null" ] || [ -z "$RAW_TAG" ]; then
-        RAW_TAG=$(curl -sL "https://api.github.com/repos/${REPO}/tags" | jq -r '.[0].name' 2>/dev/null)
+        RAW_TAG=$(curl $CURL_OPTS "https://api.github.com/repos/${REPO}/tags" | jq -r '.[0].name' 2>/dev/null)
     fi
     
     if [ "$RAW_TAG" != "null" ] && [ -n "$RAW_TAG" ]; then
@@ -64,7 +70,11 @@ if [ -n "$REPO" ]; then
             echo "✅ Upstream app is up-to-date (Version: $CURRENT_VER)."
         fi
     else
-        echo "⚠️ Could not fetch release from $REPO"
+        echo "⚠️ Could not fetch release from $REPO (Rate limit or API error)"
+        # 💡修正: APIが取得失敗してもOS更新等でビルドが走る場合に備え、現行バージョンをフォールバックとして渡す
+        if [ -n "$CURRENT_VER" ] && [ "$CURRENT_VER" != "latest" ]; then
+            echo "latest_version=$CURRENT_VER" >> $GITHUB_OUTPUT
+        fi
         if [ "$MISSING_IMAGE" = true ]; then exit 0; fi
     fi
 else
