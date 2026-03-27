@@ -20,7 +20,6 @@ COPY --from=builder /go/bin/tailscale /usr/local/bin/tailscale
 COPY --from=builder /go/bin/tailscaled /usr/local/bin/tailscaled
 COPY --from=builder /go/bin/containerboot /usr/local/bin/containerboot
 
-
 # Hardening Strategy:
 # 1. apk upgrade: Alpine Linux全体の更新
 # 2. Explicit Upgrade: ネットワーク制御と認証に関わる重要パッケージを強制更新
