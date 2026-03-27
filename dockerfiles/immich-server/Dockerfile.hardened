@@ -1,4 +1,10 @@
-FROM ghcr.io/immich-app/immich-server:release
+ARG APP_VERSION="release"
+
+FROM ghcr.io/immich-app/immich-server:${APP_VERSION}
+USER root
+
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
