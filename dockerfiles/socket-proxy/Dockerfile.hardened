@@ -1,6 +1,10 @@
-FROM tecnativa/docker-socket-proxy:latest
+ARG APP_VERSION="latest"
 
+FROM tecnativa/docker-socket-proxy:${APP_VERSION}
 USER root
+
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 # Hardening Strategy:
 # 1. apk upgrade: Alpine Linux全体の更新
