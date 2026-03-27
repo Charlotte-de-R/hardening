@@ -1,4 +1,4 @@
-ARG APP_VERSION="v1.11.0"
+ARG APP_VERSION="v1.6.0"
 
 # Stage 1: 最新Goコンパイラでバイナリを再ビルド (crypto/tls CVE解消)
 FROM golang:alpine AS builder
