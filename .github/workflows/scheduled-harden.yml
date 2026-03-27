@@ -110,16 +110,18 @@ jobs:
         run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
 
       - name: Prepare Dynamic Build Args
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
+        if: steps.check.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
         run: |
+          # 💡のメッセージは変数に混入しないよう EOF の外で出力する
+          if [ -n "${{ steps.check.outputs.latest_version }}" ]; then
+            echo "💡 最新バージョンをセットしました: ${{ steps.check.outputs.latest_version }}"
+          fi
+          
           {
             echo 'DYNAMIC_BUILD_ARGS<<EOF'
             echo "CACHEBUST=${{ env.CACHE_KEY }}"
-            
-            # check_update.sh から渡されたバージョンがあれば、全コンテナ共通で 'APP_VERSION' にセット
             if [ -n "${{ steps.check.outputs.latest_version }}" ]; then
               echo "APP_VERSION=${{ steps.check.outputs.latest_version }}"
-              echo "💡 最新バージョンをビルド引数にセットしました: ${{ steps.check.outputs.latest_version }}"
             fi
             echo 'EOF'
           } >> "$GITHUB_ENV"
