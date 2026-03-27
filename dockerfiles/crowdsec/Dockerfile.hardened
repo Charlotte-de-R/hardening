@@ -3,7 +3,8 @@ ARG APP_VERSION="latest"
 FROM golang:alpine AS builder
 ARG APP_VERSION
 
-RUN apk add --no-cache git make gcc musl-dev bash
+# 修正: yq パッケージを追加
+RUN apk add --no-cache git make gcc musl-dev bash yq
 RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
     cd /go/src/crowdsec && \
     BUILD_RE2_WASM=1 make build
@@ -16,6 +17,7 @@ LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec-cli/cscli /usr/local/bin/cscli
+
 
 
 # Replace yq as well
