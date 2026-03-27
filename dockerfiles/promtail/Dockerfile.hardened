@@ -1,7 +1,6 @@
-ARG APP_VERSION="latest"
-
-FROM grafana/promtail:${APP_VERSION}
+FROM grafana/promtail:latest
 USER root
+
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
