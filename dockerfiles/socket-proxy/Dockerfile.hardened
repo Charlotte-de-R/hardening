@@ -1,6 +1,4 @@
-ARG APP_VERSION="latest"
-
-FROM tecnativa/docker-socket-proxy:${APP_VERSION}
+FROM tecnativa/docker-socket-proxy:latest
 USER root
 
 ARG APP_VERSION
