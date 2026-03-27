@@ -1,4 +1,4 @@
-ARG APP_VERSION="latest"
+ARG APP_VERSION="v1.7.6"
 
 FROM golang:alpine AS builder
 ARG APP_VERSION
@@ -8,12 +8,7 @@ RUN apk add --no-cache git make gcc musl-dev bash
 
 # Compile CrowdSec from source using WebAssembly for RE2 to bypass C++ bloat.
 # This ensures it is built with the absolute latest Go compiler, eradicating the crypto/tls CVE.
-# APP_VERSION が latest の場合はブランチ指定なしでクローンし、エラーを回避する
-RUN if [ "${APP_VERSION}" = "latest" ]; then \
-        git clone --depth 1 https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec; \
-    else \
-        git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec; \
-    fi && \
+RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
     cd /go/src/crowdsec && \
     BUILD_RE2_WASM=1 make build
 
