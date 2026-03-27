@@ -3,7 +3,13 @@ FROM golang:alpine AS builder
 RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install github.com/tianon/gosu@latest
 
-FROM mariadb:latest
+ARG APP_VERSION="latest"
+
+FROM mariadb:${APP_VERSION}
+USER root
+
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
