@@ -107,6 +107,8 @@ jobs:
 
       - name: Check Updates
         id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
 
       - name: Prepare Dynamic Build Args
