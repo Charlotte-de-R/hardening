@@ -26,17 +26,14 @@ STRIP_V=false
 STRIP_PREFIX=""
 
 case "$IMAGE_NAME" in
-    "tailscale")    REPO="tailscale/tailscale" ;;
+    "tailscale")    REPO="tailscale/tailscale"; STRIP_V=true ;; # 修正: vを消す
     "crowdsec")     REPO="crowdsecurity/crowdsec" ;;
     "vaultwarden")  REPO="dani-garcia/vaultwarden"; STRIP_V=true ;;
     "immich-server"|"immich-machine-learning") REPO="immich-app/immich" ;;
-    "nextcloud")    REPO="nextcloud/server"; STRIP_V=true ;;
-    "mariadb")      REPO="MariaDB/server"; STRIP_PREFIX="mariadb-" ;;
-    "socket-proxy") REPO="Tecnativa/docker-socket-proxy"; STRIP_V=true ;;
-    "promtail")     REPO="grafana/loki"; STRIP_V=true ;;
     "tetragon")     REPO="cilium/tetragon" ;;
     "portainer")    REPO="portainer/portainer"; STRIP_V=true ;;
-    # 💡 immich-postgres/immich-redis はベースOSの更新チェックのみに任せるため除外
+    # 💡 Nextcloud, MariaDB, Socket-proxy, Promtail は GitHubタグとDockerタグが乖離するため
+    # API監視から外し、ベースイメージの latest 運用 + 週1強制ビルドに任せます。
 esac
 
 # ==========================================
