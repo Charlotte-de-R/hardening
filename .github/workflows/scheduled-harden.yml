@@ -116,18 +116,10 @@ jobs:
             echo 'DYNAMIC_BUILD_ARGS<<EOF'
             echo "CACHEBUST=${{ env.CACHE_KEY }}"
             
-            # Portainerがビルド対象の時だけ最新版を取得して追加
-            if [ "${{ matrix.name }}" == "portainer" ]; then
-              LATEST=$(curl -sL https://api.github.com/repos/portainer/portainer/releases/latest | jq -r .tag_name)
-              echo "PORTAINER_VERSION=$LATEST"
-              echo "💡 Portainerの最新バージョンを検出しました: $LATEST"
-            fi
-            
-            # Tetragonがビルド対象の時だけ最新版を取得して追加
-            if [ "${{ matrix.name }}" == "tetragon" ]; then
-              LATEST=$(curl -sL https://api.github.com/repos/cilium/tetragon/releases/latest | jq -r .tag_name)
-              echo "TETRAGON_VERSION=$LATEST"
-              echo "💡 Tetragonの最新バージョンを検出しました: $LATEST"
+            # check_update.sh から渡されたバージョンがあれば、全コンテナ共通で 'APP_VERSION' にセット
+            if [ -n "${{ steps.check.outputs.latest_version }}" ]; then
+              echo "APP_VERSION=${{ steps.check.outputs.latest_version }}"
+              echo "💡 最新バージョンをビルド引数にセットしました: ${{ steps.check.outputs.latest_version }}"
             fi
             echo 'EOF'
           } >> "$GITHUB_ENV"
