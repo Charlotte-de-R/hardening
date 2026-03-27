@@ -1,20 +1,47 @@
 ARG APP_VERSION="latest"
 
+# Stage 1: 最新Goコンパイラでバイナリを再ビルド (crypto/tls CVE解消)
 FROM golang:alpine AS builder
+# 変数を使う宣言
 ARG APP_VERSION
 
 RUN apk add --no-cache git make gcc musl-dev bash linux-headers
-RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/cilium/tetragon.git /go/src/tetragon && \
-    cd /go/src/tetragon && \
-    make tetragon
 
+# 変数を使ってクローン (latest の場合はブランチ指定を回避)
+RUN if [ "${APP_VERSION}" = "latest" ]; then \
+        git clone --depth 1 https://github.com/cilium/tetragon.git /go/src/tetragon; \
+    else \
+        git clone --depth 1 --branch ${APP_VERSION} https://github.com/cilium/tetragon.git /go/src/tetragon; \
+    fi
+
+WORKDIR /go/src/tetragon
+
+# tetragon エージェントをビルド（ldflagsの中も変数にする）
+RUN CGO_ENABLED=0 GOARCH=amd64 go build -mod=vendor \
+    -ldflags "-s -w -X 'github.com/cilium/tetragon/pkg/version.Version=${APP_VERSION}'" \
+    -o /go/bin/tetragon ./cmd/tetragon/
+
+# tetra CLI をビルド
+RUN CGO_ENABLED=0 GOARCH=amd64 go build -mod=vendor \
+    -ldflags "-s -w" \
+    -o /go/bin/tetra ./cmd/tetra/
+
+# gops (プロセスデバッグツール) を最新ソースからビルド
+RUN CGO_ENABLED=0 go install github.com/google/gops@latest
+
+# Stage 2: 公式イメージのBPFプログラム + 再ビルド済みGoバイナリ
 FROM quay.io/cilium/tetragon:${APP_VERSION}
 USER root
 
+# 変数を再宣言してLABELに埋め込む
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
+LABEL org.opencontainers.image.description="Tetragon - eBPF Security Observability (hardened)"
+LABEL org.opencontainers.image.base.name="quay.io/cilium/tetragon:${APP_VERSION}"
 
-COPY --from=builder /go/src/tetragon/tetragon /usr/bin/tetragon
+# CVE-freeバイナリで上書き
+COPY --from=builder /go/bin/tetragon /usr/bin/tetragon
 COPY --from=builder /go/bin/tetra /usr/bin/tetra
 COPY --from=builder /go/bin/gops /usr/bin/gops
 
