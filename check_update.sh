@@ -63,6 +63,16 @@ if [ -n "$REPO" ]; then
         if [ "$MISSING_IMAGE" = true ]; then exit 0; fi
 
         if [ "$CURRENT_VER" != "$LATEST_VER" ]; then
+            BASE_IMAGE_REF="${REPO}:${LATEST_VER}"
+            if [ "$IMAGE_NAME" = "crowdsec" ]; then
+                BASE_IMAGE_REF="ghcr.io/crowdsecurity/crowdsec:${LATEST_VER}"
+            fi
+
+            echo "🔎 Verifying upstream image availability: $BASE_IMAGE_REF"
+            if ! docker buildx imagetools inspect "$BASE_IMAGE_REF" >/dev/null 2>&1; then
+                echo "⏳ GitHub release ($LATEST_VER) is out, but upstream Docker image is not published yet. Skipping."
+                exit 0
+            fi
             echo "✨ Upstream update detected! (Current: ${CURRENT_VER:-None} -> Latest: $LATEST_VER)"
             echo "needs_update=true" >> $GITHUB_OUTPUT
             exit 0
