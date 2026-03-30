@@ -1,4 +1,4 @@
-ARG APP_VERSION="1.7.6"
+ARG APP_VERSION="v1.7.6"
 FROM golang:alpine AS builder
 ARG APP_VERSION
 
@@ -7,14 +7,13 @@ RUN apk add --no-cache git make gcc musl-dev bash
 
 # Compile CrowdSec from source using WebAssembly for RE2 to bypass C++ bloat.
 # This ensures it is built with the absolute latest Go compiler, eradicating the crypto/tls CVE.
-RUN git clone --depth 1 --branch v${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
+RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
     cd /go/src/crowdsec && \
     BUILD_RE2_WASM=1 make build
 
 # Compile yq from source to eliminate its Go CVEs
 RUN GOTOOLCHAIN=auto CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
-
-FROM crowdsecurity/crowdsec:${APP_VERSION}
+FROM ghcr.io/crowdsecurity/crowdsec:${APP_VERSION}
 USER root
 
 ARG APP_VERSION
