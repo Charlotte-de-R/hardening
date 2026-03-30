@@ -27,7 +27,7 @@ STRIP_PREFIX=""
 
 case "$IMAGE_NAME" in
     "tailscale")    REPO="tailscale/tailscale" ;;
-    "crowdsec")     REPO="crowdsecurity/crowdsec"; STRIP_V=true ;;
+    "crowdsec")     REPO="crowdsecurity/crowdsec" ;;
     "vaultwarden")  REPO="dani-garcia/vaultwarden"; STRIP_V=true ;;
     "immich-server"|"immich-machine-learning") REPO="immich-app/immich" ;;
     "tetragon")     REPO="cilium/tetragon" ;;
