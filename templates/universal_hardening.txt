@@ -15,9 +15,9 @@ RUN echo "Cache bust: $CACHEBUST" && \
         (apt-get update -o Acquire::Retries=3 || echo "⚠️ apt-get update failed") && \
         (apt-get upgrade -y -o Acquire::Retries=3 || echo "⚠️ apt-get upgrade failed") && \
         echo "🔒 Installing critical security updates from Debian sid..." && \
-        (echo "deb [trusted=yes] http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
+        (echo "deb http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
          apt-get update -o Acquire::Retries=3 || echo "⚠️ sid update failed") && \
-        (apt-get install -y --no-install-recommends --allow-unauthenticated -t sid \
+        (apt-get install -y --no-install-recommends -t sid \
             libc6 \
             zlib1g \
             libsqlite3-0 \
