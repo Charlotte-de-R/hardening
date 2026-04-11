@@ -68,7 +68,9 @@ jobs:
           - name: portainer
             context: ./dockerfiles/portainer
             image_tag: portainer:hardened
-
+          - name: cryptpad
+            context: ./dockerfiles/cryptpad
+            image_tag: cryptpad:hardened
     steps:
       - name: Determine Cache Strategy
         id: cache_strat
