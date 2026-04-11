@@ -1,0 +1,20 @@
+# hardening/dockerfiles/cryptpad/Dockerfile.hardened
+FROM cryptpad/cryptpad:latest
+
+# 一旦rootに戻り、OSレベルの脆弱性を徹底的にアップグレード＆クリーンアップ
+USER root
+
+# OSパッケージの最新化と不要なキャッシュのパージ
+RUN apt-get update && \
+    apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" full-upgrade && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 【オプション】Cryptpadの動作に不要な特権バイナリの物理削除
+# 攻撃者にシェルを奪われた際の横展開を防ぐ
+RUN rm -f /bin/su /usr/bin/sudo /usr/bin/pkexec
+
+# Cryptpadのデフォルトユーザー（通常は uid 4001）に戻す
+# root実行を許さないAppArmor/Tetragonポリシーとの整合性を保つ
+USER 4001
