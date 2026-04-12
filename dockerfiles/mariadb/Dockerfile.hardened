@@ -3,7 +3,7 @@ FROM golang:alpine AS builder
 RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install github.com/tianon/gosu@latest
 
-FROM mariadb:latest
+FROM mariadb:11.4
 USER root
 # 👇 これ以降は現在の Hardening 処理
 
