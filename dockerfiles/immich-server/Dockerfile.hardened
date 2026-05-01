@@ -10,13 +10,7 @@ LABEL org.opencontainers.image.description="Immich Server - Photo/Video Backup (
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Hardening Strategy:
-# 1. apt-get update & upgrade: ベースOSの全パッケージ更新
-# 2. Explicit Install: Trivyで指摘されたライブラリおよび攻撃面となりうるコアライブラリを指名更新
-#    - libexpat1: TrivyでCritical検出 (Null pointer dereference)。XML/メタデータ解析の保護。
-#    - zlib1g: データ圧縮・展開時のバッファオーバーフロー対策。
-#    - libsqlite3-0: システム依存関係の保護。
-#    - openssl: 暗号化通信ライブラリの最新化。
+# Hardening Strategy 1: ベースOSの全パッケージ更新とコアライブラリの指名更新
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -27,16 +21,18 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# ★ Critical Security Patch: protobufjsのRCE脆弱性(#2794)を解消
-# 攻撃者に任意のコードを実行される致命的な弱点(CVE-2026-41242)を塞ぎます。
-# Trivyの検知パスに合わせて pnpm/npm を使用し、安全なバージョン(7.5.5)へ強制アップデート。
+# ★ Hardening Strategy 2: 脆弱性パッケージの外科的置換 (Surgical Strike)
+# pnpmの仮想ストア欠損およびnpmの依存関係競合をバイパスするため、
+# 安全な一時領域で protobufjs@7.5.5 を取得し、脆弱なディレクトリを物理的に上書きします。
 WORKDIR /usr/src/app/server
-RUN npm install -g pnpm && \
-    pnpm update protobufjs@7.5.5 || \
-    npm install protobufjs@7.5.5
+RUN mkdir -p /tmp/patch && cd /tmp/patch && \
+    npm init -y && \
+    npm install protobufjs@7.5.5 && \
+    find /usr/src/app/server/node_modules -type d -name "protobufjs" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch/node_modules/protobufjs/* "$1/"' _ {} \; && \
+    rm -rf /tmp/patch
 
-# Hardening: 権限昇格経路の物理遮断（ゼロトラスト原則）
+# Hardening Strategy 3: 権限昇格経路の物理遮断（ゼロトラスト原則）
 RUN rm -f /bin/su /usr/bin/sudo || true
 
-# Immichのデフォルトプロセスが動作するよう、必要に応じてWORKDIRを戻す
+# Immichのデフォルトプロセスが動作するようWORKDIRを戻す
 WORKDIR /usr/src/app
