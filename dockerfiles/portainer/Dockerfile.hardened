@@ -36,7 +36,7 @@ COPY --from=builder /go/bin/portainer /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # ★ Hardening Strategy: OSパッケージ更新、Docker CLI置換、lodash置換
-# 予測不能な set -e の暴走を防ぐため、完全な && チェーンと安全な for ループに再設計
+# Busybox(Alpine)の制約を受けない、最もポータブルで強靭なスクリプト構造
 RUN apk update && apk add --no-cache curl nodejs npm && \
     curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
     tar xzvf docker-25.0.4.tgz && \
@@ -44,14 +44,14 @@ RUN apk update && apk add --no-cache curl nodejs npm && \
     (cp docker/docker /usr/bin/docker 2>/dev/null || true) && \
     rm -rf docker docker-25.0.4.tgz && \
     mkdir -p /tmp/patch && cd /tmp/patch && \
-    npm init -y && npm install lodash@latest --no-audit --no-fund && \
-    for target in $(find / -type d -name "lodash" -not -path "/tmp/*" 2>/dev/null || echo ""); do \
-        if [ -n "$target" ]; then \
+    npm init -y && npm install lodash@latest && \
+    find / -type d -name "lodash" 2>/dev/null | while read -r target; do \
+        if [ "$target" != "/tmp/patch/node_modules/lodash" ]; then \
             echo "Patching lodash at: $target"; \
-            rm -rf "$target" && cp -a /tmp/patch/node_modules/lodash "$target"; \
+            rm -rf "$target"/* && cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
         fi; \
-    done && \
+    done; \
     cd / && rm -rf /tmp/patch && \
     apk upgrade --no-cache --available && \
     apk del curl nodejs npm && \
-    rm -rf /var/cache/apk/* /bin/su /usr/bin/sudo || true
+    rm -rf /var/cache/apk/* /bin/su /usr/bin/sudo
