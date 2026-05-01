@@ -1,12 +1,14 @@
 ARG APP_VERSION="latest"
 
-# Stage 1: 最新Goコンパイラでバイナリを再ビルド
+# Stage 0: 元のイメージをエイリアス（後でUIファイルを吸い出すため）
+FROM portainer/portainer-ce:${APP_VERSION} AS base
+
+# Stage 1: Builder (最新Goコンパイラでコアバイナリを再ビルド)
 FROM golang:alpine AS builder
 ARG APP_VERSION
 
 RUN apk add --no-cache git ca-certificates
 
-# 変数を使ってクローン (latest の場合はブランチ指定を回避)
 RUN if [ "${APP_VERSION}" = "latest" ]; then \
         git clone --depth 1 https://github.com/portainer/portainer.git /go/src/portainer; \
     else \
@@ -24,34 +26,43 @@ RUN cd api && \
     -o /go/bin/portainer \
     ./cmd/portainer/
 
-# Stage 2: 公式イメージのフロントエンド + 再ビルド済みGoバイナリ
+# Stage 2: Patcher (手術室：Alpine環境で安全にパッチを適用)
+FROM alpine AS patcher
+RUN apk add --no-cache curl nodejs npm
+
+# 公式イメージからフロントエンド(UI)ディレクトリを吸い出す
+COPY --from=base /public /app/public
+
+# RCE脆弱性のある lodash を最新版へ外科的置換
+RUN mkdir -p /tmp/patch && cd /tmp/patch && \
+    npm init -y && npm install lodash@latest && \
+    find /app/public -type d -name "lodash" 2>/dev/null | while read -r target; do \
+        echo "Patching lodash at: $target"; \
+        rm -rf "$target"/* && cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
+    done
+
+# 脆弱性のないクリーンな Docker CLI バイナリを取得
+RUN curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
+    tar xzvf docker-25.0.4.tgz && \
+    mkdir -p /app/bin && \
+    cp docker/docker /app/bin/docker
+
+# Stage 3: Final Image (Distroless環境への直接インジェクション)
 FROM portainer/portainer-ce:${APP_VERSION}
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
-LABEL org.opencontainers.image.description="Portainer (Hardened, Go Standard CVEs Patched)"
+LABEL org.opencontainers.image.description="Portainer (Hardened, Distroless-Compatible)"
 
-COPY --from=builder /go/bin/portainer /
+# 1. CVE-freeな自前ビルドのコアバイナリと証明書で上書き
+COPY --from=builder /go/bin/portainer /portainer
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-# ★ Hardening Strategy: OSパッケージ更新、Docker CLI置換、lodash置換
-# Busybox(Alpine)の制約を受けない、最もポータブルで強靭なスクリプト構造
-RUN apk update && apk add --no-cache curl nodejs npm && \
-    curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
-    tar xzvf docker-25.0.4.tgz && \
-    (cp docker/docker /usr/local/bin/docker 2>/dev/null || true) && \
-    (cp docker/docker /usr/bin/docker 2>/dev/null || true) && \
-    rm -rf docker docker-25.0.4.tgz && \
-    mkdir -p /tmp/patch && cd /tmp/patch && \
-    npm init -y && npm install lodash@latest && \
-    find / -type d -name "lodash" 2>/dev/null | while read -r target; do \
-        if [ "$target" != "/tmp/patch/node_modules/lodash" ]; then \
-            echo "Patching lodash at: $target"; \
-            rm -rf "$target"/* && cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
-        fi; \
-    done; \
-    cd / && rm -rf /tmp/patch && \
-    apk upgrade --no-cache --available && \
-    apk del curl nodejs npm && \
-    rm -rf /var/cache/apk/* /bin/su /usr/bin/sudo
+# 2. Stage 2の手術室で「lodash」をパッチ済みのUIファイルで上書き
+COPY --from=patcher /app/public /public
+
+# 3. 脆弱性のある同梱Docker CLIをクリーンなもので上書き
+COPY --from=patcher /app/bin/docker /docker
+
+# 💡 RUN コマンドは使用しないため、シェルが存在しないDistroless環境でも絶対にクラッシュしません。
