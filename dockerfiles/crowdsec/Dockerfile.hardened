@@ -31,10 +31,13 @@ LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
 LABEL org.opencontainers.image.description="CrowdSec - IPS/IDS (hardened & completely CVE-free)"
 
-# ★ OS-Level Hardening: musl, openssl, zlib, rsync の脆弱性を解消
-# CrowdSecのベースイメージがAlpineかDebianのどちらで提供されても確実に動作する防弾仕様のアップデートコマンド
+# ★ Ultimate OS-Level Hardening: musl, openssl, zlib, rsync の脆弱性を解消
+# CrowdSecのベースイメージがAlpineの場合、強制的にEdgeリポジトリ(最新開発版)へ書き換えてOSコアをごっそり最新化します。
+# 万が一将来Debianベースに変更されても動作する防弾仕様です。
 RUN if [ -f /sbin/apk ]; then \
-        apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*; \
+        echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" > /etc/apk/repositories && \
+        echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
+        apk update && apk upgrade --no-cache --available && rm -rf /var/cache/apk/*; \
     elif [ -f /usr/bin/apt-get ]; then \
         apt-get update && apt-get upgrade -y && apt-get clean && rm -rf /var/lib/apt/lists/*; \
     fi
