@@ -15,7 +15,7 @@ RUN if [ "${APP_VERSION}" = "latest" ]; then \
 
 WORKDIR /go/src/portainer
 
-# ★ 修正箇所: 依存モジュールの強制アップデート(go get)はコード互換性を壊すため撤回。
+# 依存モジュールの強制アップデート(go get)はコード互換性を壊すため撤回。
 # 最新Goコンパイラでビルドするだけで、標準ライブラリ(crypto/tls等)の脆弱性は無力化されます。
 RUN cd api && \
     go mod tidy && \
@@ -29,8 +29,6 @@ RUN cd api && \
 # Stage 2: 公式イメージのフロントエンド + 再ビルド済みGoバイナリ
 FROM portainer/portainer-ce:${APP_VERSION}
 
-# 💡 ここにあった諸悪の根源 `USER root` を削除
-
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
@@ -41,18 +39,27 @@ COPY --from=builder /go/bin/portainer /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # ★ Hardening Strategy: OSパッケージ更新、Docker CLI置換、lodash置換
-RUN apk update && apk add --no-cache curl nodejs npm && \
-    curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
-    tar xzvf docker-25.0.4.tgz && \
-    mv docker/docker /usr/local/bin/docker || true && \
-    mv docker/docker /usr/bin/docker || true && \
-    rm -rf docker docker-25.0.4.tgz && \
-    mkdir -p /tmp/patch && cd /tmp/patch && \
-    npm init -y && \
-    npm install lodash@latest && \
-    find / -type d -name "lodash" -not -path "/tmp/*" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch/node_modules/lodash/* "$1/"' _ {} \; || true && \
-    rm -rf /tmp/patch && \
-    apk upgrade --no-cache --available && \
-    apk del curl nodejs npm && \
-    rm -rf /var/cache/apk/* && \
+# ワンライナーの && チェーンをやめ、堅牢なシーケンシャルスクリプトとして実行します
+RUN set -e; \
+    apk update; \
+    apk add --no-cache curl nodejs npm; \
+    curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz; \
+    tar xzvf docker-25.0.4.tgz; \
+    cp docker/docker /usr/local/bin/docker 2>/dev/null || true; \
+    cp docker/docker /usr/bin/docker 2>/dev/null || true; \
+    rm -rf docker docker-25.0.4.tgz; \
+    mkdir -p /tmp/patch; \
+    cd /tmp/patch; \
+    npm init -y; \
+    npm install lodash@latest; \
+    find /usr /opt /public /app /var -type d -name "lodash" 2>/dev/null | while read -r target; do \
+        echo "Patching lodash at: $target"; \
+        rm -rf "$target"/*; \
+        cp -a /tmp/patch/node_modules/lodash/* "$target"/; \
+    done; \
+    cd /; \
+    rm -rf /tmp/patch; \
+    apk upgrade --no-cache --available; \
+    apk del curl nodejs npm; \
+    rm -rf /var/cache/apk/*; \
     rm -f /bin/su /usr/bin/sudo || true
