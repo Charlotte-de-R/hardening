@@ -12,6 +12,11 @@ RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/cilium/tetrag
 
 WORKDIR /go/src/tetragon
 
+# ★修正箇所: gRPCのCritical脆弱性を塞ぐため、依存モジュールを強制アップデート
+RUN go get google.golang.org/grpc@latest && \
+    go mod tidy && \
+    go mod vendor
+
 # tetragon エージェントをビルド（ldflagsの中も変数にする）
 RUN CGO_ENABLED=0 GOARCH=amd64 go build -mod=vendor \
     -ldflags "-s -w -X 'github.com/cilium/tetragon/pkg/version.Version=${APP_VERSION}'" \
