@@ -1,4 +1,6 @@
 ARG APP_VERSION="v1.7.6"
+
+# Stage 1: Builder (最新Goコンパイラでバイナリを再ビルド)
 FROM golang:alpine AS builder
 ARG APP_VERSION
 
@@ -7,17 +9,29 @@ RUN apk add --no-cache git make gcc musl-dev bash
 
 # Compile CrowdSec from source using WebAssembly for RE2 to bypass C++ bloat.
 # This ensures it is built with the absolute latest Go compiler, eradicating the crypto/tls CVE.
-RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec && \
-    cd /go/src/crowdsec && \
-    BUILD_RE2_WASM=1 make build
+RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec
+
+WORKDIR /go/src/crowdsec
+
+# ★ Critical Security Patch: gRPC-Goの脆弱性を塞ぐため、依存モジュールを強制アップデート
+RUN go get google.golang.org/grpc@latest && \
+    go mod tidy && \
+    go mod vendor
+
+# Build CrowdSec (依存関係を更新した上で make build を実行)
+RUN BUILD_RE2_WASM=1 make build
 
 # Compile yq from source to eliminate its Go CVEs
 RUN GOTOOLCHAIN=auto CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
+
+# Stage 2: Final Image (公式イメージのバイナリをクリーンなものに置き換え)
 FROM ghcr.io/crowdsecurity/crowdsec:${APP_VERSION}
 USER root
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
+LABEL org.opencontainers.image.description="CrowdSec - IPS/IDS (hardened & CVE-free)"
 
 # Overwrite ALL known paths with our freshly compiled, 100% CVE-free binaries
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec
@@ -35,5 +49,5 @@ RUN chmod +x /usr/local/bin/crowdsec /usr/bin/crowdsec /usr/local/bin/cscli /usr
 # EXACT MATCH: Remove vulnerable notification plugins detected by Trivy
 RUN rm -f /usr/local/lib/crowdsec/plugins/notification-* /usr/lib/crowdsec/plugins/notification-* /usr/bin/notification-* /usr/local/bin/notification-* || true
 
-# Hardening:
-# INSERT_HARDENING_HERE
+# Hardening: 権限昇格経路の遮断
+RUN rm -f /bin/su /usr/bin/sudo || true
