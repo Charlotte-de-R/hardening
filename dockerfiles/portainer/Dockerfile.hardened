@@ -15,8 +15,6 @@ RUN if [ "${APP_VERSION}" = "latest" ]; then \
 
 WORKDIR /go/src/portainer
 
-# 依存モジュールの強制アップデート(go get)はコード互換性を壊すため撤回。
-# 最新Goコンパイラでビルドするだけで、標準ライブラリ(crypto/tls等)の脆弱性は無力化されます。
 RUN cd api && \
     go mod tidy && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
@@ -34,32 +32,26 @@ LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
 LABEL org.opencontainers.image.description="Portainer (Hardened, Go Standard CVEs Patched)"
 
-# Stage 1からクリーンなバイナリと証明書をコピー
 COPY --from=builder /go/bin/portainer /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # ★ Hardening Strategy: OSパッケージ更新、Docker CLI置換、lodash置換
-# ワンライナーの && チェーンをやめ、堅牢なシーケンシャルスクリプトとして実行します
-RUN set -e; \
-    apk update; \
-    apk add --no-cache curl nodejs npm; \
-    curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz; \
-    tar xzvf docker-25.0.4.tgz; \
-    cp docker/docker /usr/local/bin/docker 2>/dev/null || true; \
-    cp docker/docker /usr/bin/docker 2>/dev/null || true; \
-    rm -rf docker docker-25.0.4.tgz; \
-    mkdir -p /tmp/patch; \
-    cd /tmp/patch; \
-    npm init -y; \
-    npm install lodash@latest; \
-    find /usr /opt /public /app /var -type d -name "lodash" 2>/dev/null | while read -r target; do \
-        echo "Patching lodash at: $target"; \
-        rm -rf "$target"/*; \
-        cp -a /tmp/patch/node_modules/lodash/* "$target"/; \
-    done; \
-    cd /; \
-    rm -rf /tmp/patch; \
-    apk upgrade --no-cache --available; \
-    apk del curl nodejs npm; \
-    rm -rf /var/cache/apk/*; \
-    rm -f /bin/su /usr/bin/sudo || true
+# 予測不能な set -e の暴走を防ぐため、完全な && チェーンと安全な for ループに再設計
+RUN apk update && apk add --no-cache curl nodejs npm && \
+    curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
+    tar xzvf docker-25.0.4.tgz && \
+    (cp docker/docker /usr/local/bin/docker 2>/dev/null || true) && \
+    (cp docker/docker /usr/bin/docker 2>/dev/null || true) && \
+    rm -rf docker docker-25.0.4.tgz && \
+    mkdir -p /tmp/patch && cd /tmp/patch && \
+    npm init -y && npm install lodash@latest --no-audit --no-fund && \
+    for target in $(find / -type d -name "lodash" -not -path "/tmp/*" 2>/dev/null || echo ""); do \
+        if [ -n "$target" ]; then \
+            echo "Patching lodash at: $target"; \
+            rm -rf "$target" && cp -a /tmp/patch/node_modules/lodash "$target"; \
+        fi; \
+    done && \
+    cd / && rm -rf /tmp/patch && \
+    apk upgrade --no-cache --available && \
+    apk del curl nodejs npm && \
+    rm -rf /var/cache/apk/* /bin/su /usr/bin/sudo || true
