@@ -7,6 +7,12 @@ RUN apk update && \
     apk upgrade --no-cache && \
     rm -rf /var/cache/apk/*
 
+# ★修正箇所: npm依存関係の監査と protobufjs の Critical (RCE) 脆弱性の修正
+WORKDIR /cryptpad
+RUN npm audit fix --force || true \
+    && npm install protobufjs@latest
+
+# 権限昇格コマンドの削除
 RUN rm -f /bin/su /usr/bin/sudo || true
 
 USER 4001
