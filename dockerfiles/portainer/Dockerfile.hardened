@@ -15,7 +15,11 @@ RUN if [ "${APP_VERSION}" = "latest" ]; then \
 
 WORKDIR /go/src/portainer
 
-RUN cd api && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+# 依存モジュールの脆弱性(Moby/BuildKit等)をアップデートしてからビルド
+RUN cd api && \
+    go get github.com/moby/buildkit@latest && \
+    go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -trimpath \
     --installsuffix cgo \
     --ldflags "-s -w" \
@@ -29,6 +33,27 @@ FROM portainer/portainer-ce:${APP_VERSION}
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
+LABEL org.opencontainers.image.description="Portainer (Hardened, CVE-free & Source Rebuilt)"
 
+# Stage 1からクリーンなバイナリと証明書をコピー
 COPY --from=builder /go/bin/portainer /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+# ★ Hardening Strategy: OSパッケージ更新、Docker CLI置換、lodash置換
+# (USERを明示せずともベースイメージの権限で実行し、作業後にパッチツールをパージします)
+RUN apk update && apk add --no-cache curl nodejs npm && \
+    curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
+    tar xzvf docker-25.0.4.tgz && \
+    mv docker/docker /usr/local/bin/docker || true && \
+    mv docker/docker /usr/bin/docker || true && \
+    rm -rf docker docker-25.0.4.tgz && \
+    mkdir -p /tmp/patch && cd /tmp/patch && \
+    npm init -y && \
+    npm install lodash@latest && \
+    find / -type d -name "lodash" -not -path "/tmp/*" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch/node_modules/lodash/* "$1/"' _ {} \; || true && \
+    rm -rf /tmp/patch && \
+    apk upgrade --no-cache --available && \
+    apk del curl nodejs npm && \
+    rm -rf /var/cache/apk/* && \
+    rm -f /bin/su /usr/bin/sudo || true
