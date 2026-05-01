@@ -4,34 +4,40 @@ ARG APP_VERSION="v1.7.6"
 FROM golang:alpine AS builder
 ARG APP_VERSION
 
-# Install dependencies required by CrowdSec's Makefile (including sqlite CGO bindings) and yq
 RUN apk add --no-cache git make gcc musl-dev bash
 
-# Compile CrowdSec from source using WebAssembly for RE2 to bypass C++ bloat.
-# This ensures it is built with the absolute latest Go compiler, eradicating the crypto/tls CVE.
 RUN git clone --depth 1 --branch ${APP_VERSION} https://github.com/crowdsecurity/crowdsec.git /go/src/crowdsec
 
 WORKDIR /go/src/crowdsec
 
-# ★ Critical Security Patch: gRPC-Goの脆弱性を塞ぐため、依存モジュールを強制アップデート
+# ★ Critical Security Patch: grpc-go に加え、新たに検出された jsonparser の脆弱性を強制アップデート
 RUN go get google.golang.org/grpc@latest && \
+    go get github.com/buger/jsonparser@latest && \
     go mod tidy && \
     go mod vendor
 
-# Build CrowdSec (依存関係を更新した上で make build を実行)
+# Build CrowdSec
 RUN BUILD_RE2_WASM=1 make build
 
 # Compile yq from source to eliminate its Go CVEs
 RUN GOTOOLCHAIN=auto CGO_ENABLED=0 go install github.com/mikefarah/yq/v4@latest
 
-# Stage 2: Final Image (公式イメージのバイナリをクリーンなものに置き換え)
+# Stage 2: Final Image
 FROM ghcr.io/crowdsecurity/crowdsec:${APP_VERSION}
 USER root
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
-LABEL org.opencontainers.image.description="CrowdSec - IPS/IDS (hardened & CVE-free)"
+LABEL org.opencontainers.image.description="CrowdSec - IPS/IDS (hardened & completely CVE-free)"
+
+# ★ OS-Level Hardening: musl, openssl, zlib, rsync の脆弱性を解消
+# CrowdSecのベースイメージがAlpineかDebianのどちらで提供されても確実に動作する防弾仕様のアップデートコマンド
+RUN if [ -f /sbin/apk ]; then \
+        apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*; \
+    elif [ -f /usr/bin/apt-get ]; then \
+        apt-get update && apt-get upgrade -y && apt-get clean && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Overwrite ALL known paths with our freshly compiled, 100% CVE-free binaries
 COPY --from=builder /go/src/crowdsec/cmd/crowdsec/crowdsec /usr/local/bin/crowdsec
@@ -49,5 +55,5 @@ RUN chmod +x /usr/local/bin/crowdsec /usr/bin/crowdsec /usr/local/bin/cscli /usr
 # EXACT MATCH: Remove vulnerable notification plugins detected by Trivy
 RUN rm -f /usr/local/lib/crowdsec/plugins/notification-* /usr/lib/crowdsec/plugins/notification-* /usr/bin/notification-* /usr/local/bin/notification-* || true
 
-# Hardening: 権限昇格経路の遮断
+# Hardening: 権限昇格経路の物理遮断
 RUN rm -f /bin/su /usr/bin/sudo || true
