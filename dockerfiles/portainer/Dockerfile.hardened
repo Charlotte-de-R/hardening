@@ -15,9 +15,9 @@ RUN if [ "${APP_VERSION}" = "latest" ]; then \
 
 WORKDIR /go/src/portainer
 
-# 依存モジュールの脆弱性(Moby/BuildKit等)をアップデートしてからビルド
+# ★ 修正箇所: 依存モジュールの強制アップデート(go get)はコード互換性を壊すため撤回。
+# 最新Goコンパイラでビルドするだけで、標準ライブラリ(crypto/tls等)の脆弱性は無力化されます。
 RUN cd api && \
-    go get github.com/moby/buildkit@latest && \
     go mod tidy && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -trimpath \
@@ -29,19 +29,18 @@ RUN cd api && \
 # Stage 2: 公式イメージのフロントエンド + 再ビルド済みGoバイナリ
 FROM portainer/portainer-ce:${APP_VERSION}
 
-# 💡 ここにあった諸悪の根源 `USER root` を削除しました！
+# 💡 ここにあった諸悪の根源 `USER root` を削除
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
-LABEL org.opencontainers.image.description="Portainer (Hardened, CVE-free & Source Rebuilt)"
+LABEL org.opencontainers.image.description="Portainer (Hardened, Go Standard CVEs Patched)"
 
 # Stage 1からクリーンなバイナリと証明書をコピー
 COPY --from=builder /go/bin/portainer /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # ★ Hardening Strategy: OSパッケージ更新、Docker CLI置換、lodash置換
-# (USERを明示せずともベースイメージの権限で実行し、作業後にパッチツールをパージします)
 RUN apk update && apk add --no-cache curl nodejs npm && \
     curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
     tar xzvf docker-25.0.4.tgz && \
