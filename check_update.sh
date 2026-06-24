@@ -63,6 +63,14 @@ if [ -n "$REPO" ]; then
         if [ "$MISSING_IMAGE" = true ]; then exit 0; fi
 
         if [ "$CURRENT_VER" != "$LATEST_VER" ]; then
+
+            if [ "$IMAGE_NAME" = "tailscale" ]; then
+                echo "✨ Upstream update detected! (Current: ${CURRENT_VER:-None} -> Latest: $LATEST_VER)"
+                echo "💡 Tailscale: Source-compiled from Go module, skipping Docker image check."
+                echo "needs_update=true" >> $GITHUB_OUTPUT
+                exit 0
+            fi
+
             BASE_IMAGE_REF="${REPO}:${LATEST_VER}"
             if [ "$IMAGE_NAME" = "crowdsec" ]; then
                 BASE_IMAGE_REF="ghcr.io/crowdsecurity/crowdsec:${LATEST_VER}"
