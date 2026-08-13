@@ -17,6 +17,11 @@ RUN if [ "${APP_VERSION}" = "latest" ]; then \
 
 WORKDIR /go/src/portainer
 
+# CVE-2026-50195 / CVE-2026-53488: containerd 依存を修正済みバージョンへ更新
+RUN cd api && \
+    go get github.com/containerd/containerd@v1.7.33 && \
+    go mod tidy
+
 RUN cd api && \
     go mod tidy && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
@@ -41,9 +46,10 @@ RUN mkdir -p /tmp/patch && cd /tmp/patch && \
         rm -rf "$target"/* && cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
     done
 
-# 脆弱性のないクリーンな Docker CLI バイナリを取得
-RUN curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-25.0.4.tgz && \
-    tar xzvf docker-25.0.4.tgz && \
+# 脆弱性のないクリーンな Docker CLI バイナリを取得 (CVE-2024-24790, CVE-2026-17106 修正済み)
+ARG DOCKER_CLI_VERSION="29.7.2"
+RUN curl -fsSLO "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" && \
+    tar xzvf "docker-${DOCKER_CLI_VERSION}.tgz" && \
     mkdir -p /app/bin && \
     cp docker/docker /app/bin/docker
 
