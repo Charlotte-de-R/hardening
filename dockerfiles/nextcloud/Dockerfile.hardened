@@ -1,23 +1,31 @@
-FROM golang:alpine AS builder
-# Recompile gosu to eliminate Go CVEs
-RUN apk add --no-cache git && \
-    CGO_ENABLED=0 go install github.com/tianon/gosu@latest
-FROM nextcloud:latest
+ARG APP_VERSION="latest"
+
+# --- ベースは公式そのまま ---
+FROM nextcloud:${APP_VERSION}
+
 USER root
-# 👇 これ以降は現在の Hardening 処理
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
+LABEL org.opencontainers.image.description="Nextcloud (safe hardened)"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# COPY the freshly built gosu binary and forcibly map it to all known paths
-COPY --from=builder /go/bin/gosu /usr/local/bin/gosu
-RUN ln -sf /usr/local/bin/gosu /usr/bin/gosu && \
-    ln -sf /usr/local/bin/gosu /usr/sbin/gosu && \
-    ln -sf /usr/local/bin/gosu /sbin/gosu
+# --- ⚠️ 重要 ---
+# gosuは絶対に触らない（削除・置換禁止）
+# apt upgradeも禁止（ABI崩壊回避）
 
+# --- 最小限の安全なアップデートのみ ---
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        tzdata && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-ARG CACHEBUST=1
-ENV DEBIAN_FRONTEND=noninteractive
-# INSERT_HARDENING_HERE
+# --- 不要な権限昇格経路の削除（安全範囲） ---
+RUN rm -f /bin/su /usr/bin/sudo || true
+
+# --- 作業ディレクトリ維持 ---
+WORKDIR /var/www/html
