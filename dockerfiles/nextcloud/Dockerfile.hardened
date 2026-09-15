@@ -1,6 +1,5 @@
 ARG APP_VERSION="latest"
 
-# --- ベースは公式そのまま ---
 FROM nextcloud:${APP_VERSION}
 
 USER root
@@ -12,11 +11,7 @@ LABEL org.opencontainers.image.description="Nextcloud (safe hardened)"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# --- ⚠️ 重要 ---
-# gosuは絶対に触らない（削除・置換禁止）
-# apt upgradeも禁止（ABI崩壊回避）
-
-# --- 最小限の安全なアップデートのみ ---
+# --- 最小限のみ（絶対安全ライン） ---
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -24,8 +19,8 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# --- 不要な権限昇格経路の削除（安全範囲） ---
+
+# --- 軽いハードニングのみ ---
 RUN rm -f /bin/su /usr/bin/sudo || true
 
-# --- 作業ディレクトリ維持 ---
 WORKDIR /var/www/html
