@@ -21,6 +21,6 @@ RUN apt-get update && \
 
 
 # --- 軽いハードニングのみ ---
-RUN rm -f /bin/su /usr/bin/sudo || true
+RUN rm -f /usr/bin/sudo || true
 
 WORKDIR /var/www/html
