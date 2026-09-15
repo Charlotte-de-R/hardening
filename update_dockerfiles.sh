@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# update_dockerfiles.sh
-
 set -e
 
 UNIVERSAL_SNIPPET=$(cat templates/universal_hardening.txt)
@@ -29,17 +27,17 @@ update_file() {
   local snippet_content=$2
 
   if [ ! -f "$target_file" ]; then
-    echo "⚠️  File not found: $target_file (Skipping)"
+    echo "⚠️ File not found: $target_file (Skipping)"
     return
   fi
 
-  # 既存ブロックをマーカーに戻す
-  perl -i -0777 -pe 's/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs' "$target_file"
+  # ベース判定（雑だが実用的）
+  if grep -qiE 'debian|ubuntu' "$target_file"; then
+    echo "🐧 Debian系 detected → apt hardening ON"
 
-  # ★ ここが重要：共通ハードニングにPerl削除を強制追加
-  HARDENING_APPEND=$(cat <<'EOF'
+    HARDENING_APPEND=$(cat <<'EOF'
 
-# --- Package minimization (auto-injected) ---
+# --- Package minimization (Debian/Ubuntu only) ---
 RUN apt-get update && \
     apt-get purge -y \
         perl \
@@ -51,6 +49,14 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 EOF
 )
+
+  else
+    echo "🚫 Non-Debian image → skip apt hardening"
+    HARDENING_APPEND=""
+  fi
+
+  # 既存ブロック削除
+  perl -i -0777 -pe 's/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs' "$target_file"
 
   FINAL_CONTENT="${snippet_content}
 ${HARDENING_APPEND}"
@@ -66,4 +72,4 @@ for file in "${ALL_TARGETS[@]}"; do
   update_file "$file" "$UNIVERSAL_SNIPPET"
 done
 
-echo "🚀 All Dockerfiles hardened"
+echo "🚀 All Dockerfiles hardened (safe mode)"
