@@ -20,6 +20,12 @@ ALL_TARGETS=(
 "dockerfiles/cryptpad/Dockerfile.hardened"
 )
 
+# ★ 重要：削除禁止リスト
+EXCLUDE_APT_PURGE=(
+"immich-postgres"
+"mariadb"
+)
+
 echo "🔄 Injecting UNIVERSAL hardening templates..."
 
 update_file() {
@@ -31,13 +37,29 @@ update_file() {
     return
   fi
 
-  # ベース判定（雑だが実用的）
+  # --- 除外判定 ---
+  local skip_purge=false
+  for exclude in "${EXCLUDE_APT_PURGE[@]}"; do
+    if [[ "$target_file" == *"$exclude"* ]]; then
+      skip_purge=true
+      break
+    fi
+  done
+
+  # --- Debian判定 ---
   if grep -qiE 'debian|ubuntu' "$target_file"; then
-    echo "🐧 Debian系 detected → apt hardening ON"
 
-    HARDENING_APPEND=$(cat <<'EOF'
+    if [ "$skip_purge" = true ]; then
+      echo "⚠️ $target_file → perl purge SKIPPED (dependency)"
 
-# --- Package minimization (Debian/Ubuntu only) ---
+      HARDENING_APPEND=""
+
+    else
+      echo "🐧 $target_file → apt hardening ON"
+
+      HARDENING_APPEND=$(cat <<'EOF'
+
+# --- Package minimization (Debian/Ubuntu safe) ---
 RUN apt-get update && \
     apt-get purge -y \
         perl \
@@ -50,12 +72,14 @@ RUN apt-get update && \
 EOF
 )
 
+    fi
+
   else
     echo "🚫 Non-Debian image → skip apt hardening"
     HARDENING_APPEND=""
   fi
 
-  # 既存ブロック削除
+  # --- 既存ブロック削除 ---
   perl -i -0777 -pe 's/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs' "$target_file"
 
   FINAL_CONTENT="${snippet_content}
@@ -72,4 +96,4 @@ for file in "${ALL_TARGETS[@]}"; do
   update_file "$file" "$UNIVERSAL_SNIPPET"
 done
 
-echo "🚀 All Dockerfiles hardened (safe mode)"
+echo "🚀 All Dockerfiles hardened (stable mode)"
