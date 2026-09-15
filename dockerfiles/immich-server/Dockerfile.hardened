@@ -1,16 +1,19 @@
 ARG APP_VERSION="release"
 
 FROM ghcr.io/immich-app/immich-server:${APP_VERSION}
+
 USER root
 
 ARG APP_VERSION
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
-LABEL org.opencontainers.image.description="Immich Server - Photo/Video Backup (hardened & CVE-free)"
+LABEL org.opencontainers.image.description="Immich Server - Photo/Video Backup (hardened & CVE-reduced)"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Hardening Strategy 1: ベースOSの全パッケージ更新とコアライブラリの指名更新
+# =========================
+# Hardening Strategy 1: OS更新 + 不要パッケージ削除
+# =========================
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -18,21 +21,33 @@ RUN apt-get update && \
         zlib1g \
         libsqlite3-0 \
         openssl && \
+    apt-get purge -y \
+        perl \
+        perl-base \
+        perl-modules \
+        perl-archive-tar || true && \
+    apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# ★ Hardening Strategy 2: 脆弱性パッケージの外科的置換 (Surgical Strike)
-# pnpmの仮想ストア欠損およびnpmの依存関係競合をバイパスするため、
-# 安全な一時領域で protobufjs@7.5.5 を取得し、脆弱なディレクトリを物理的に上書きします。
+# =========================
+# Hardening Strategy 2: protobufjs 脆弱性の外科的置換
+# =========================
 WORKDIR /usr/src/app/server
-RUN mkdir -p /tmp/patch && cd /tmp/patch && \
+
+RUN mkdir -p /tmp/patch && \
+    cd /tmp/patch && \
     npm init -y && \
     npm install protobufjs@7.5.5 && \
     find /usr/src/app/server/node_modules -type d -name "protobufjs" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch/node_modules/protobufjs/* "$1/"' _ {} \; && \
     rm -rf /tmp/patch
 
-# Hardening Strategy 3: 権限昇格経路の物理遮断（ゼロトラスト原則）
+# =========================
+# Hardening Strategy 3: 権限昇格遮断
+# =========================
 RUN rm -f /bin/su /usr/bin/sudo || true
 
-# Immichのデフォルトプロセスが動作するようWORKDIRを戻す
+# =========================
+# 実行ディレクトリ復元
+# =========================
 WORKDIR /usr/src/app
