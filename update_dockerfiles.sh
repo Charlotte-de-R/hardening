@@ -20,7 +20,7 @@ ALL_TARGETS=(
 "dockerfiles/cryptpad/Dockerfile.hardened"
 )
 
-# 削除禁止（依存強い）
+# 🔥 完全除外（重要）
 EXCLUDE_APT_PURGE=(
 "nextcloud"
 "immich-postgres"
@@ -34,42 +34,40 @@ local target_file=$1
 local snippet_content=$2
 
 if [ ! -f "$target_file" ]; then
-echo "⚠️ File not found: $target_file (Skipping)"
-return
+  echo "⚠️ File not found: $target_file (Skipping)"
+  return
 fi
 
 local skip_purge=false
 for exclude in "${EXCLUDE_APT_PURGE[@]}"; do
-if [[ "$target_file" == *"$exclude"* ]]; then
-skip_purge=true
-break
-fi
+  if [[ "$target_file" == *"$exclude"* ]]; then
+    skip_purge=true
+    break
+  fi
 done
 
 if grep -qiE 'debian|ubuntu' "$target_file"; then
 
-if [ "$skip_purge" = true ]; then
-echo "⚠️ $target_file → apt purge SKIPPED"
-HARDENING_APPEND=""
-else
-echo "🐧 $target_file → safe apt hardening"
+  if [ "$skip_purge" = true ]; then
+    echo "⛔ $target_file → apt purge DISABLED (runtime dependency)"
+    HARDENING_APPEND=""
+  else
+    echo "🐧 $target_file → apt hardening ON"
 
-HARDENING_APPEND=$(cat <<'EOF'
-
-# --- Package minimization (safe minimal) ---
+    HARDENING_APPEND=$(cat <<'EOF'
+# --- Package minimization (SAFE TARGETS ONLY) ---
 RUN apt-get update && \
-apt-get purge -y perl-archive-tar || true && \
-apt-get autoremove -y && \
-apt-get clean && \
-rm -rf /var/lib/apt/lists/*
+    apt-get purge -y perl-archive-tar || true && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 EOF
 )
-
-fi
+  fi
 
 else
-echo "🚫 Non-Debian image → skip apt hardening"
-HARDENING_APPEND=""
+  echo "🚫 Non-Debian image → skip apt hardening"
+  HARDENING_APPEND=""
 fi
 
 perl -i -0777 -pe 's/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs' "$target_file"
@@ -85,7 +83,7 @@ echo "✅ Updated: $target_file"
 }
 
 for file in "${ALL_TARGETS[@]}"; do
-update_file "$file" "$UNIVERSAL_SNIPPET"
+  update_file "$file" "$UNIVERSAL_SNIPPET"
 done
 
-echo "🚀 All Dockerfiles hardened (stable & safe mode)"
+echo "🚀 All Dockerfiles hardened (stable mode)"
