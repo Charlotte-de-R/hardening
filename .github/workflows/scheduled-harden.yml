@@ -130,6 +130,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build and Push
+        id: build
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v6
         with:
@@ -143,6 +144,29 @@ jobs:
             GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           provenance: false
           sbom: false
+
+      - name: Sign image (cosign)
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}"
+          DIGEST="${{ steps.build.outputs.digest }}"
+
+          if [ -z "$DIGEST" ]; then
+            echo "❌ Digest not found"
+            exit 1
+          fi
+
+          cosign sign --yes "$IMAGE@$DIGEST"
+
+      - name: Verify signature
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}"
+          DIGEST="${{ steps.build.outputs.digest }}"
+
+          cosign verify "$IMAGE@$DIGEST"
 
       - name: Trivy scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
