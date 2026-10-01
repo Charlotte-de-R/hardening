@@ -40,7 +40,8 @@ RUN mkdir -p /tmp/patch && \
     npm init -y && \
     npm install protobufjs@7.5.5 && \
     find /usr/src/app/server/node_modules -type d -name "protobufjs" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch/node_modules/protobufjs/* "$1/"' _ {} \; && \
-    rm -rf /tmp/patch
+    npm cache clean --force 2>/dev/null || true && \
+    rm -rf /tmp/patch /root/.npm
 
 # =========================
 # Hardening Strategy 3: 権限昇格遮断
