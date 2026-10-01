@@ -32,6 +32,8 @@ case "$IMAGE_NAME" in
     "immich-server"|"immich-machine-learning") REPO="immich-app/immich" ;;
     "tetragon")     REPO="cilium/tetragon" ;;
     "portainer")    REPO="portainer/portainer"; STRIP_V=true ;;
+    "cryptpad")     REPO="cryptpad/cryptpad" ;;
+    "nextcloud")    REPO="nextcloud/server"; STRIP_V=true ;;
 esac
 
 # ==========================================
