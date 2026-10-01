@@ -15,17 +15,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Hardening Strategy 1: OS更新 + 不要パッケージ削除
 # =========================
 RUN apt-get update && \
-    apt-get upgrade -y && \
+    apt-get dist-upgrade -y && \
     apt-get install -y --no-install-recommends \
         libexpat1 \
         zlib1g \
         libsqlite3-0 \
-        openssl && \
-    apt-get purge -y \
+        openssl \
+        libglib2.0-0 \
         perl \
-        perl-base \
+        perl-base && \
+    apt-get purge -y \
         perl-modules \
-        perl-archive-tar || true && \
+        perl-archive-tar && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
