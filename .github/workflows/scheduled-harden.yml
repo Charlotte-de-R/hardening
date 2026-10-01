@@ -11,6 +11,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_OWNER: charlotte-de-r
@@ -135,7 +139,6 @@ jobs:
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: docker/build-push-action@v6
         with:
-          no-cache: true
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
           push: true
@@ -143,6 +146,8 @@ jobs:
           build-args: ${{ env.DYNAMIC_BUILD_ARGS }}
           secrets: |
             GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: false
           sbom: false
 
@@ -183,3 +188,10 @@ jobs:
           exit-code: '0'
           timeout: '15m'
           scanners: 'vuln'
+
+      - name: Upload Trivy SARIF results to GitHub Security
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-${{ matrix.name }}'
