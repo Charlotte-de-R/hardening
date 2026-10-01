@@ -25,8 +25,7 @@ RUN apt-get update && \
         perl \
         perl-base && \
     apt-get purge -y \
-        perl-modules \
-        perl-archive-tar && \
+        perl-modules || true && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
