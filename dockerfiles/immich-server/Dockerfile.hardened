@@ -31,7 +31,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # =========================
-# Hardening Strategy 2: protobufjs & proxy-addr 脆弱性の外科的置換
+# Hardening Strategy 2: protobufjs 脆弱性の外科的置換
 # =========================
 WORKDIR /usr/src/app/server
 
@@ -41,20 +41,6 @@ RUN mkdir -p /tmp/patch && \
     npm install protobufjs@7.5.5 && \
     find /usr/src/app/server/node_modules -type d -name "protobufjs" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch/node_modules/protobufjs/* "$1/"' _ {} \; && \
     rm -rf /tmp/patch
-
-# ★ proxy-addr を 2.0.8 (CVE-2026-90711 対策) に外科的置換
-RUN mkdir -p /tmp/patch-proxy && cd /tmp/patch-proxy && \
-    npm init -y && \
-    npm install proxy-addr@2.0.8 && \
-    find /usr/src/app/server/node_modules -type d -name "proxy-addr" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch-proxy/node_modules/proxy-addr/* "$1/"' _ {} \; && \
-    rm -rf /tmp/patch-proxy
-
-# OpenEXR パーサーの無効化（CVE-2026-34543 / CVE-2025-64181 等の対策）
-RUN for p in /etc/ImageMagick-*/policy.xml; do \
-      if [ -f "$p" ] && ! grep -q 'pattern="EXR"' "$p"; then \
-        sed -i '/<policymap>/a\  <policy domain="coder" rights="none" pattern="EXR" />' "$p"; \
-      fi; \
-    done || true
 
 # =========================
 # Hardening Strategy 3: 権限昇格遮断

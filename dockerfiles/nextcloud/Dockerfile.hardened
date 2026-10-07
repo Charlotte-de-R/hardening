@@ -23,11 +23,4 @@ RUN apt-get update && \
 # --- 軽いハードニングのみ ---
 RUN rm -f /usr/bin/sudo || true
 
-# OpenEXR パーサーの無効化（CVE-2026-34543 / CVE-2025-64181 等の対策）
-RUN for p in /etc/ImageMagick-*/policy.xml; do \
-      if [ -f "$p" ] && ! grep -q 'pattern="EXR"' "$p"; then \
-        sed -i '/<policymap>/a\  <policy domain="coder" rights="none" pattern="EXR" />' "$p"; \
-      fi; \
-    done || true
-
 WORKDIR /var/www/html
