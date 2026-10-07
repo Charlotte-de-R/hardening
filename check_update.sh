@@ -43,15 +43,15 @@ if [ -n "$REPO" ]; then
     echo "🌐 Fetching latest release for $REPO..."
     
     # 💡修正: GITHUB_TOKEN を使ってAPI制限(Rate Limit)を回避する
-    CURL_OPTS="-sL"
+    CURL_OPTS=(-sL)
     if [ -n "${GITHUB_TOKEN:-}" ]; then
-        CURL_OPTS="-sL -H \"Authorization: Bearer $GITHUB_TOKEN\""
+        CURL_OPTS+=(-H "Authorization: Bearer $GITHUB_TOKEN")
     fi
     
-    RAW_TAG=$(curl $CURL_OPTS "https://api.github.com/repos/${REPO}/releases/latest" | jq -r .tag_name 2>/dev/null)
+    RAW_TAG=$(curl "${CURL_OPTS[@]}" "https://api.github.com/repos/${REPO}/releases/latest" | jq -r .tag_name 2>/dev/null)
     
     if [ "$RAW_TAG" == "null" ] || [ -z "$RAW_TAG" ]; then
-        RAW_TAG=$(curl $CURL_OPTS "https://api.github.com/repos/${REPO}/tags" | jq -r '.[0].name' 2>/dev/null)
+        RAW_TAG=$(curl "${CURL_OPTS[@]}" "https://api.github.com/repos/${REPO}/tags" | jq -r '.[0].name' 2>/dev/null)
     fi
     
     if [ "$RAW_TAG" != "null" ] && [ -n "$RAW_TAG" ]; then
