@@ -2,7 +2,8 @@
 # Usage: ./check_update.sh <target_image>
 
 IMAGE=$1
-IMAGE_NAME=$(echo "$IMAGE" | awk -F'/' '{print $NF}' | cut -d':' -f1)
+IMAGE_NAME="${IMAGE##*/}"
+IMAGE_NAME="${IMAGE_NAME%%:*}"
 
 echo "🔍 Checking updates for: $IMAGE (Name: $IMAGE_NAME)..."
 
