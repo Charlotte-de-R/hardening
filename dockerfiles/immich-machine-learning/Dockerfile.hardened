@@ -71,4 +71,10 @@ RUN echo "Cache bust: $CACHEBUST" && \
 # --- COMMON HARDENING END ---
 
 # anyio を CVE-2026-63374 対策版へ更新
-RUN /opt/venv/bin/pip install --upgrade --no-cache-dir "anyio>=4.14.2"
+RUN if [ -f /opt/venv/bin/pip ]; then \
+        /opt/venv/bin/pip install --upgrade --no-cache-dir "anyio>=4.14.2"; \
+    elif command -v pip >/dev/null 2>&1; then \
+        pip install --upgrade --no-cache-dir "anyio>=4.14.2"; \
+    elif command -v pip3 >/dev/null 2>&1; then \
+        pip3 install --upgrade --no-cache-dir "anyio>=4.14.2"; \
+    fi
