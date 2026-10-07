@@ -1,6 +1,16 @@
 #!/bin/bash
 # Usage: ./check_update.sh <target_image>
 
+if [ -z "${1:-}" ]; then
+  echo "Usage: $0 <target_image>"
+  exit 1
+fi
+
+if [[ "$1" =~ ^- ]]; then
+  echo "Error: Invalid image name '$1'. Image name cannot start with a hyphen."
+  exit 1
+fi
+
 IMAGE=$1
 IMAGE_NAME="${IMAGE##*/}"
 IMAGE_NAME="${IMAGE_NAME%%:*}"
@@ -8,7 +18,7 @@ IMAGE_NAME="${IMAGE_NAME%%:*}"
 echo "🔍 Checking updates for: $IMAGE (Name: $IMAGE_NAME)..."
 
 # 1. リモートにイメージが存在しない場合はビルド
-if ! docker pull "$IMAGE" >/dev/null 2>&1; then
+if ! docker pull -- "$IMAGE" >/dev/null 2>&1; then
   echo "✨ Image does not exist remotely. Triggering build."
   echo "needs_update=true" >> $GITHUB_OUTPUT
   MISSING_IMAGE=true
@@ -17,7 +27,7 @@ else
 fi
 
 # イメージに焼き込まれたバージョン（LABEL）を取得
-CURRENT_VER=$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$IMAGE" 2>/dev/null || echo "")
+CURRENT_VER=$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' -- "$IMAGE" 2>/dev/null || echo "")
 
 # ==========================================
 # 2. GitHub API 監視設定（全アプリ対応）
@@ -116,7 +126,7 @@ else
 fi
 '
 
-OUTPUT=$(docker run --rm --user 0:0 --entrypoint sh "$IMAGE" -c "$CHECK_CMD" 2>&1 || true)
+OUTPUT=$(docker run --rm --user 0:0 --entrypoint sh -- "$IMAGE" -c "$CHECK_CMD" 2>&1 || true)
 
 if echo "$OUTPUT" | grep -q "executable file not found"; then
     echo "💤 Image has no shell (scratch/distroless). Skipping OS package check."
