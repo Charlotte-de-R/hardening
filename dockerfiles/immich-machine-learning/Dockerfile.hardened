@@ -70,11 +70,6 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
-# anyio を CVE-2026-63374 対策版へ更新
-RUN if [ -f /opt/venv/bin/pip ]; then \
-        /opt/venv/bin/pip install --upgrade --no-cache-dir "anyio>=4.14.2"; \
-    elif command -v pip >/dev/null 2>&1; then \
-        pip install --upgrade --no-cache-dir "anyio>=4.14.2"; \
-    elif command -v pip3 >/dev/null 2>&1; then \
-        pip3 install --upgrade --no-cache-dir "anyio>=4.14.2"; \
-    fi
+# anyio を CVE-2026-63374 対策版へ更新 (旧バージョンdist-infoの残存防止とprefix指定)
+RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
+    pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
