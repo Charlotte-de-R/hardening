@@ -33,12 +33,23 @@ update_file() {
     fi
 
     # 既存ブロックをマーカーに戻す
-    perl -i -0777 -pe 's/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs' "$target_file"
+    perl -i -0777 -pe 's/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs' "$target_file" || return 1
     
     export CONTENT="$snippet_content"
-    perl -i -0777 -pe 's/# INSERT_HARDENING_HERE/$ENV{CONTENT}/ge' "$target_file"
+    perl -i -0777 -pe 's/# INSERT_HARDENING_HERE/$ENV{CONTENT}/ge' "$target_file" || return 1
 
     echo "✅ Updated: $target_file"
 }
 
-for file in "${ALL_TARGETS[@]}"; do update_file "$file" "$UNIVERSAL_SNIPPET"; done
+pids=()
+for file in "${ALL_TARGETS[@]}"; do
+    update_file "$file" "$UNIVERSAL_SNIPPET" &
+    pids+=($!)
+done
+
+exit_code=0
+for pid in "${pids[@]}"; do
+    wait "$pid" || exit_code=1
+done
+
+exit $exit_code
