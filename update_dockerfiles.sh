@@ -32,11 +32,11 @@ update_file() {
         return
     fi
 
-    # 既存ブロックをマーカーに戻す
-    perl -i -0777 -pe 's/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs' "$target_file"
-    
     export CONTENT="$snippet_content"
-    perl -i -0777 -pe 's/# INSERT_HARDENING_HERE/$ENV{CONTENT}/ge' "$target_file"
+    perl -i -0777 -pe '
+        s/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs;
+        s/# INSERT_HARDENING_HERE/$ENV{CONTENT}/ge;
+    ' "$target_file"
 
     echo "✅ Updated: $target_file"
 }
