@@ -1,36 +1,36 @@
-# Container Hardening Repository 🛡️
+# コンテナセキュリティ強化リポジトリ 🛡️
 
-Automated build pipeline and hardening configuration for container images published to `ghcr.io`.
+`ghcr.io` に公開されるコンテナイメージのための、自動ビルドパイプラインおよびセキュリティ強化（ハーデニング）設定です。
 
-## 📌 Architecture & Features
+## 📌 アーキテクチャと機能
 
-This repository automates the process of fetching upstream application releases, injecting security hardening steps into Dockerfiles, building hardened container images, signing them with Cosign, scanning for vulnerabilities with Trivy, and publishing them to GitHub Container Registry (`ghcr.io`).
+このリポジトリは、上流アプリケーションのリリース取得、Dockerfileへのセキュリティ強化ステップの組み込み、セキュリティ強化されたコンテナイメージのビルド、Cosignによる署名、Trivyによる脆弱性スキャン、そしてGitHub Container Registry (`ghcr.io`) への公開プロセスを自動化します。
 
-### 🔑 Key Features
-* **Universal Security Hardening (`templates/universal_hardening.txt`)**:
-  - Automatically updates Alpine (`apk`) / Debian (`apt-get`) OS packages and security libraries (e.g., `libssl3`, `libcrypto3`, `zlib`, `sqlite`).
-  - Purges insecure tools (`vim`, `nano`, `git`, `telnet`, `ftp`) and cleans package caches.
-  - Upgrades vulnerable runtime dependencies (Node.js npm / Python pip packages).
-  - Cleanups temporary files and optimizes layers for Trivy scanning.
-* **Automated Update Detection (`check_update.sh`)**:
-  - Monitors upstream GitHub releases / tags (e.g., Tailscale, CrowdSec, Vaultwarden, Immich, Tetragon, Portainer, CryptPad, Nextcloud).
-  - Checks if OS-level package updates are pending inside existing container images.
-* **GitHub Actions CI/CD Pipeline (`scheduled-harden.yml`)**:
-  - Runs daily scheduled builds using Docker Buildx matrix strategy.
-  - Accelerates build speeds with GitHub Actions cache (`type=gha`).
-  - Signs images with **Cosign** Keyless OIDC signatures.
-  - Scans images for `CRITICAL` vulnerabilities with **Trivy** and uploads SARIF reports to GitHub Security Code Scanning tab.
+### 🔑 主な機能
+* **汎用的なセキュリティ強化 (`templates/universal_hardening.txt`)**:
+  - Alpine (`apk`) / Debian (`apt-get`) のOSパッケージおよびセキュリティライブラリ（例: `libssl3`、`libcrypto3`、`zlib`、`sqlite`）を自動的にアップデートします。
+  - 安全ではないツール（`vim`、`nano`、`git`、`telnet`、`ftp`）を削除し、パッケージキャッシュをクリーンアップします。
+  - 脆弱性のあるランタイム依存関係（Node.jsのnpm / Pythonのpipパッケージ）をアップグレードします。
+  - 一時ファイルをクリーンアップし、Trivyのスキャン用にレイヤーを最適化します。
+* **自動アップデート検知 (`check_update.sh`)**:
+  - 上流のGitHubリリース / タグ（例: Tailscale、CrowdSec、Vaultwarden、Immich、Tetragon、Portainer、CryptPad、Nextcloud）を監視します。
+  - 既存のコンテナイメージ内でOSレベルのパッケージアップデートが保留されていないか確認します。
+* **GitHub Actions CI/CD パイプライン (`scheduled-harden.yml`)**:
+  - Docker Buildxのマトリックス戦略を使用して、毎日定期実行されるビルドを実行します。
+  - GitHub Actionsキャッシュ（`type=gha`）によりビルド速度を高速化します。
+  - **Cosign** のキーレスOIDC署名でイメージに署名します。
+  - **Trivy** を使用してイメージの `CRITICAL`（致命的）な脆弱性をスキャンし、SARIFレポートをGitHubのSecurity Code Scanningタブにアップロードします。
 
 ---
 
-## 📁 Repository Structure
+## 📁 リポジトリ構造
 
 ```text
 .
 ├── .github/workflows/
-│   └── scheduled-harden.yml    # GitHub Actions workflow for automated build, scan, sign & publish
+│   └── scheduled-harden.yml    # 自動ビルド、スキャン、署名、公開を行うGitHub Actionsワークフロー
 ├── templates/
-│   └── universal_hardening.txt # Universal hardening snippet injected into Dockerfiles
+│   └── universal_hardening.txt # Dockerfileに挿入される汎用的なセキュリティ強化スニペット
 ├── dockerfiles/
 │   ├── crowdsec/
 │   ├── cryptpad/
@@ -46,32 +46,32 @@ This repository automates the process of fetching upstream application releases,
 │   ├── tailscale/
 │   ├── tetragon/
 │   └── vaultwarden/
-├── check_update.sh             # Upstream release & OS update check script
-├── update_dockerfiles.sh       # Script to inject universal_hardening.txt into Dockerfiles
+├── check_update.sh             # 上流のリリースおよびOSのアップデート確認スクリプト
+├── update_dockerfiles.sh       # universal_hardening.txtをDockerfileに挿入するスクリプトスコプト
 └── README.md
 ```
 
 ---
 
-## 🛠️ Usage & Operations
+## 🛠️ 使い方と運用
 
-### 1. Updating Hardening Templates Across All Dockerfiles
-When modifications are made to `templates/universal_hardening.txt`, run:
+### 1. すべてのDockerfileにおけるセキュリティ強化テンプレートの更新
+`templates/universal_hardening.txt` に変更を加えた場合は、以下を実行します：
 
 ```bash
 chmod +x update_dockerfiles.sh
 ./update_dockerfiles.sh
 ```
 
-This replaces the `# --- COMMON HARDENING START ---` to `# --- COMMON HARDENING END ---` blocks in all targeted `Dockerfile.hardened` files.
+これにより、対象となるすべての `Dockerfile.hardened` ファイル内の `# --- COMMON HARDENING START ---` から `# --- COMMON HARDENING END ---` までのブロックが置き換えられます。
 
-### 2. Checking Image Update Status
-To check if a specific image needs an upstream version or OS package update:
+### 2. イメージのアップデート状態の確認
+特定のイメージに上流のバージョンやOSパッケージのアップデートが必要かどうかを確認するには、以下を実行します：
 
 ```bash
 chmod +x check_update.sh
 ./check_update.sh ghcr.io/charlotte-de-r/hardening/vaultwarden:hardened
 ```
 
-### 3. Manual Workflow Trigger
-Workflows can be manually triggered from GitHub Actions tab (`workflow_dispatch`). Enabling `force_build: true` forces all container images to rebuild regardless of update detection.
+### 3. ワークフローの手動トリガー
+GitHub Actionsタブからワークフローを手動でトリガーできます（`workflow_dispatch`）。`force_build: true` を有効にすると、アップデートの検知状況に関係なく、すべてのコンテナイメージが強制的に再ビルドされます。
