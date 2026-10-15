@@ -41,4 +41,19 @@ update_file() {
     echo "✅ Updated: $target_file"
 }
 
-for file in "${ALL_TARGETS[@]}"; do update_file "$file" "$UNIVERSAL_SNIPPET"; done
+if [ -n "${1:-}" ]; then
+    if [[ "$1" =~ ^- ]]; then
+        echo "Error: Invalid target '$1'. Target cannot start with a hyphen."
+        exit 1
+    fi
+
+    TARGET="$1"
+    if [ -d "$TARGET" ]; then
+        TARGET="${TARGET%/}/Dockerfile.hardened"
+    fi
+    TARGETS=("$TARGET")
+else
+    TARGETS=("${ALL_TARGETS[@]}")
+fi
+
+for file in "${TARGETS[@]}"; do update_file "$file" "$UNIVERSAL_SNIPPET"; done

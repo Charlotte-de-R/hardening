@@ -99,7 +99,9 @@ jobs:
         run: chmod +x update_dockerfiles.sh check_update.sh
 
       - name: Inject Security Hardening Templates
-        run: ./update_dockerfiles.sh
+        env:
+          TARGET_CONTEXT: ${{ matrix.context }}
+        run: ./update_dockerfiles.sh "$TARGET_CONTEXT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.10.0
