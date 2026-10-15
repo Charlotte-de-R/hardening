@@ -70,16 +70,18 @@ if [ -n "$REPO" ]; then
         
         if [ "$STRIP_V" = true ]; then LATEST_VER="${LATEST_VER#v}"; fi
         if [ -n "$STRIP_PREFIX" ]; then LATEST_VER="${LATEST_VER#$STRIP_PREFIX}"; fi
-        
-        echo "latest_version=$LATEST_VER" >> $GITHUB_OUTPUT
-        
-        if [ "$MISSING_IMAGE" = true ]; then exit 0; fi
+
+        if [ "$MISSING_IMAGE" = true ]; then
+            echo "latest_version=$LATEST_VER" >> $GITHUB_OUTPUT
+            exit 0
+        fi
 
         if [ "$CURRENT_VER" != "$LATEST_VER" ]; then
 
             if [ "$IMAGE_NAME" = "tailscale" ]; then
                 echo "✨ Upstream update detected! (Current: ${CURRENT_VER:-None} -> Latest: $LATEST_VER)"
                 echo "💡 Tailscale: Source-compiled from Go module, skipping Docker image check."
+                echo "latest_version=$LATEST_VER" >> $GITHUB_OUTPUT
                 echo "needs_update=true" >> $GITHUB_OUTPUT
                 exit 0
             fi
@@ -87,6 +89,8 @@ if [ -n "$REPO" ]; then
             BASE_IMAGE_REF="${REPO}:${LATEST_VER}"
             if [ "$IMAGE_NAME" = "crowdsec" ]; then
                 BASE_IMAGE_REF="ghcr.io/crowdsecurity/crowdsec:${LATEST_VER}"
+            elif [ "$IMAGE_NAME" = "nextcloud" ]; then
+                BASE_IMAGE_REF="nextcloud:${LATEST_VER}"
             fi
 
             echo "🔎 Verifying upstream image availability: $BASE_IMAGE_REF"
@@ -95,9 +99,11 @@ if [ -n "$REPO" ]; then
                 exit 0
             fi
             echo "✨ Upstream update detected! (Current: ${CURRENT_VER:-None} -> Latest: $LATEST_VER)"
+            echo "latest_version=$LATEST_VER" >> $GITHUB_OUTPUT
             echo "needs_update=true" >> $GITHUB_OUTPUT
             exit 0
         else
+            echo "latest_version=$LATEST_VER" >> $GITHUB_OUTPUT
             echo "✅ Upstream app is up-to-date (Version: $CURRENT_VER)."
         fi
     else
