@@ -183,7 +183,7 @@ jobs:
 
       - name: Trivy scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
         with:
           image-ref: ${{ env.FULL_IMAGE_NAME }}
           format: 'sarif'
