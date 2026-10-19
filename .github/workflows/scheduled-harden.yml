@@ -138,15 +138,15 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_ENV"
 
-      - name: Build and Push
-        id: build
+      - name: Build local image
+        id: build_local
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
+          push: false
+          load: true
           tags: ${{ env.FULL_IMAGE_NAME }}
           build-args: ${{ env.DYNAMIC_BUILD_ARGS }}
           secrets: |
@@ -155,31 +155,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: false
           sbom: false
-
-      - name: Sign image (cosign)
-        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
-        continue-on-error: true
-        env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: |
-          IMAGE="${{ env.FULL_IMAGE_NAME }}"
-          DIGEST="${{ steps.build.outputs.digest }}"
-
-          if [ -z "$DIGEST" ]; then
-            echo "⚠️ Digest not found"
-            exit 0
-          fi
-
-          cosign sign --yes "$IMAGE@$DIGEST" || echo "⚠️ sign failed"
-
-      - name: Verify signature
-        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
-        continue-on-error: true
-        run: |
-          IMAGE="${{ env.FULL_IMAGE_NAME }}"
-          DIGEST="${{ steps.build.outputs.digest }}"
-
-          cosign verify "$IMAGE@$DIGEST" || echo "⚠️ verify failed"
 
       - name: Trivy scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
@@ -193,6 +168,48 @@ jobs:
           exit-code: '1'
           timeout: '15m'
           scanners: 'vuln'
+
+      - name: Push image to registry
+        id: push
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile.hardened
+          push: true
+          load: false
+          tags: ${{ env.FULL_IMAGE_NAME }}
+          build-args: ${{ env.DYNAMIC_BUILD_ARGS }}
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          provenance: false
+          sbom: false
+
+      - name: Sign image (cosign)
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}"
+          DIGEST="${{ steps.push.outputs.digest }}"
+
+          if [ -z "$DIGEST" ]; then
+            echo "⚠️ Digest not found"
+            exit 0
+          fi
+
+          cosign sign --yes "$IMAGE@$DIGEST" || echo "⚠️ sign failed"
+
+      - name: Verify signature
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+        continue-on-error: true
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}"
+          DIGEST="${{ steps.push.outputs.digest }}"
+
+          cosign verify "$IMAGE@$DIGEST" || echo "⚠️ verify failed"
 
       - name: Upload Trivy SARIF results to GitHub Security
         if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request') && always()
