@@ -93,7 +93,7 @@ jobs:
         run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
 
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Make scripts executable
         run: chmod +x update_dockerfiles.sh check_update.sh
@@ -104,17 +104,17 @@ jobs:
         run: ./update_dockerfiles.sh "$TARGET_CONTEXT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.10.0
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409
 
       - name: Check Updates
         id: check
@@ -141,7 +141,7 @@ jobs:
       - name: Build and Push
         id: build
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
@@ -183,20 +183,20 @@ jobs:
 
       - name: Trivy scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0
         with:
           image-ref: ${{ env.FULL_IMAGE_NAME }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL'
-          ignore-unfixed: false
-          exit-code: '0'
+          ignore-unfixed: true
+          exit-code: '1'
           timeout: '15m'
           scanners: 'vuln'
 
       - name: Upload Trivy SARIF results to GitHub Security
         if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request') && always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@d0bae162f31f17dd92c46ccdc4dfee5710f8dc67
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-${{ matrix.name }}'
