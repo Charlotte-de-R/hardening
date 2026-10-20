@@ -1,0 +1,11 @@
+--- .github/workflows/scheduled-harden.yml
++++ .github/workflows/scheduled-harden.yml
+@@ -205,7 +205,7 @@
+
+       - name: Upload Trivy SARIF results to GitHub Security
+         if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure') && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request')
+-        uses: github/codeql-action/upload-sarif@ce5e7eeac396d720fe2d802714996c8ce561e311 # v3
++        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+         with:
+           sarif_file: 'trivy-results.sarif'
+           category: 'trivy-${{ matrix.name }}'

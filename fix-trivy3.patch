@@ -1,0 +1,9 @@
+--- .github/workflows/scheduled-harden.yml
++++ .github/workflows/scheduled-harden.yml
+@@ -165,6 +165,7 @@
+           output: 'trivy-results.sarif'
+           severity: 'CRITICAL'
+           ignore-unfixed: true
++          exit-code: '1'
+           timeout: '15m'
+           scanners: 'vuln'

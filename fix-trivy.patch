@@ -1,0 +1,11 @@
+--- .github/workflows/scheduled-harden.yml
++++ .github/workflows/scheduled-harden.yml
+@@ -159,7 +159,7 @@
+       - name: Trivy scan
+         id: trivy
+         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
+-        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
++        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+         with:
+           image-ref: ${{ env.FULL_IMAGE_NAME }}
+           format: 'sarif'

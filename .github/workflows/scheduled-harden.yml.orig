@@ -1,0 +1,210 @@
+name: Scheduled Build & Scan (Matrix Strategy)
+
+on:
+  schedule:
+    - cron: '30 19 * * *'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if no updates found'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: charlotte-de-r
+  IMAGE_REPO: hardening
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-and-harden:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - name: tailscale
+            context: ./dockerfiles/tailscale
+            image_tag: tailscale:hardened
+          - name: crowdsec
+            context: ./dockerfiles/crowdsec
+            image_tag: crowdsec:hardened
+          - name: socket-proxy
+            context: ./dockerfiles/socket-proxy
+            image_tag: socket-proxy:hardened
+          - name: promtail
+            context: ./dockerfiles/promtail
+            image_tag: promtail:hardened
+          - name: immich-server
+            context: ./dockerfiles/immich-server
+            image_tag: immich-server:hardened
+          - name: immich-machine-learning
+            context: ./dockerfiles/immich-machine-learning
+            image_tag: immich-machine-learning:hardened
+          - name: immich-redis
+            context: ./dockerfiles/immich-redis
+            image_tag: immich-redis:hardened
+          - name: immich-postgres
+            context: ./dockerfiles/immich-postgres
+            image_tag: immich-postgres:hardened
+          - name: nextcloud
+            context: ./dockerfiles/nextcloud
+            image_tag: nextcloud:hardened
+          - name: mariadb
+            context: ./dockerfiles/mariadb
+            image_tag: mariadb:hardened
+          - name: vaultwarden
+            context: ./dockerfiles/vaultwarden
+            image_tag: vaultwarden:hardened
+          - name: tetragon
+            context: ./dockerfiles/tetragon
+            image_tag: tetragon:hardened
+          - name: portainer
+            context: ./dockerfiles/portainer
+            image_tag: portainer:hardened
+          - name: cryptpad
+            context: ./dockerfiles/cryptpad
+            image_tag: cryptpad:hardened
+
+    steps:
+      - name: Determine Cache Strategy
+        run: |
+          if [ "${{ inputs.force_build }}" == "true" ]; then
+            echo "CACHE_KEY=${{ github.run_id }}" >> $GITHUB_ENV
+          else
+            echo "CACHE_KEY=$(date +%Y.%U)" >> $GITHUB_ENV
+          fi
+
+      - name: Set image full path
+        run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Make scripts executable
+        run: chmod +x update_dockerfiles.sh check_update.sh
+
+      - name: Inject Security Hardening Templates
+        env:
+          TARGET_CONTEXT: ${{ matrix.context }}
+        run: ./update_dockerfiles.sh "$TARGET_CONTEXT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Check Updates
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
+
+      - name: Prepare Dynamic Build Args
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
+        run: |
+          if [ -n "${{ steps.check.outputs.latest_version }}" ]; then
+            echo "💡 最新バージョンをセットしました: ${{ steps.check.outputs.latest_version }}"
+          fi
+
+          {
+            echo 'DYNAMIC_BUILD_ARGS<<EOF'
+            echo "CACHEBUST=${{ env.CACHE_KEY }}"
+            if [ -n "${{ steps.check.outputs.latest_version }}" ]; then
+              echo "APP_VERSION=${{ steps.check.outputs.latest_version }}"
+            fi
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Build and Push
+        id: build
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile.hardened
+          push: false
+          load: true
+          tags: ${{ env.FULL_IMAGE_NAME }}
+          build-args: ${{ env.DYNAMIC_BUILD_ARGS }}
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          provenance: false
+          sbom: false
+
+      - name: Trivy scan
+        id: trivy
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.FULL_IMAGE_NAME }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          timeout: '15m'
+          scanners: 'vuln'
+
+      - name: Push image to registry
+        id: push
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+        run: |
+          docker push ${{ env.FULL_IMAGE_NAME }}
+          IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${{ env.FULL_IMAGE_NAME }} | awk -F@ '{print $2}')
+          echo "digest=$IMAGE_DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Sign image (cosign)
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}"
+          DIGEST="${{ steps.push.outputs.digest }}"
+
+          if [ -z "$DIGEST" ]; then
+            echo "⚠️ Digest not found"
+            exit 0
+          fi
+
+          cosign sign --yes "$IMAGE@$DIGEST" || echo "⚠️ sign failed"
+
+      - name: Verify signature
+        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+        continue-on-error: true
+        run: |
+          IMAGE="${{ env.FULL_IMAGE_NAME }}"
+          DIGEST="${{ steps.push.outputs.digest }}"
+
+          cosign verify "$IMAGE@$DIGEST" || echo "⚠️ verify failed"
+
+      - name: Upload Trivy SARIF results to GitHub Security
+        if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure') && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request')
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-${{ matrix.name }}'

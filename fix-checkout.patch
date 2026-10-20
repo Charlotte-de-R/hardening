@@ -1,0 +1,22 @@
+--- .github/workflows/scheduled-harden.yml
++++ .github/workflows/scheduled-harden.yml
+@@ -93,7 +93,7 @@
+         run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
+
+       - name: Checkout repository
+-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
++        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+       - name: Make scripts executable
+         run: chmod +x update_dockerfiles.sh check_update.sh
+--- .github/workflows/shell-tests.yml
++++ .github/workflows/shell-tests.yml
+@@ -10,7 +10,7 @@
+   test:
+     runs-on: ubuntu-latest
+     steps:
+-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+       - name: Run shell tests
+         run: |

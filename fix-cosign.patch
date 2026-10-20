@@ -1,0 +1,11 @@
+--- .github/workflows/scheduled-harden.yml
++++ .github/workflows/scheduled-harden.yml
+@@ -114,7 +114,7 @@
+           password: ${{ secrets.GITHUB_TOKEN }}
+
+       - name: Install Cosign
+-        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
++        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+       - name: Check Updates
+         id: check
