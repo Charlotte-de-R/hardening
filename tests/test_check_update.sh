@@ -19,6 +19,17 @@ echo "$@" >> "$DOCKER_LOG"
 if [ "${1:-}" = "pull" ] && [ -n "${DOCKER_PULL_EXIT_CODE:-}" ]; then
   exit "$DOCKER_PULL_EXIT_CODE"
 fi
+if [ "${1:-}" = "run" ]; then
+  if [ -n "${DOCKER_RUN_STDERR:-}" ]; then
+    printf "%s\n" "$DOCKER_RUN_STDERR" >&2
+  fi
+  if [ -n "${DOCKER_RUN_OUTPUT:-}" ]; then
+    printf "%s\n" "$DOCKER_RUN_OUTPUT"
+  fi
+  if [ -n "${DOCKER_RUN_EXIT_CODE:-}" ]; then
+    exit "$DOCKER_RUN_EXIT_CODE"
+  fi
+fi
 exit 0
 EOF
 
@@ -367,6 +378,128 @@ EOF
   rm -f "$output_file"
 }
 run_docker_pull_failure_api_fail_test
+
+# --- OS package check tests ---
+run_os_check_test() {
+  local test_name="$1"
+  local image_arg="$2"
+  local expected_needs_update="$3"
+  local check_message_pattern="$4"
+
+  echo -n "Running OS package check test: $test_name... "
+
+  # Reset temporary logs
+  > "$CURL_LOG"
+  > "$DOCKER_LOG"
+  > "$TEST_GITHUB_OUTPUT"
+
+  local output_file
+  output_file=$(mktemp)
+  local actual_code=0
+
+  set +e
+  ./check_update.sh "$image_arg" >"$output_file" 2>&1
+  actual_code=$?
+  set -e
+
+  if [ "$actual_code" -ne 0 ]; then
+    echo "FAILED (Expected exit code 0, got $actual_code)"
+    cat "$output_file"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  # Check that docker run was called
+  if ! grep -q "^run " "$DOCKER_LOG"; then
+    echo "FAILED (docker run was not called)"
+    cat "$DOCKER_LOG"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  # Ensure curl was NOT called for unknown images
+  if [ -s "$CURL_LOG" ]; then
+    echo "FAILED (curl was called but no API call was expected for unknown image)"
+    cat "$CURL_LOG"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if [ -n "$check_message_pattern" ]; then
+    if ! grep -q "$check_message_pattern" "$output_file"; then
+      echo "FAILED (Expected message matching '$check_message_pattern' not found in output)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+  fi
+
+  local output_value="needs_update=${expected_needs_update}"
+  local inverse_value="needs_update=true"
+  if [ "$expected_needs_update" = "true" ]; then
+    inverse_value="needs_update=false"
+  fi
+
+  if ! grep -Fxq "$output_value" "$TEST_GITHUB_OUTPUT"; then
+    echo "FAILED ($output_value not found in GITHUB_OUTPUT)"
+    cat "$TEST_GITHUB_OUTPUT"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if grep -Fxq "$inverse_value" "$TEST_GITHUB_OUTPUT"; then
+    echo "FAILED ($inverse_value was incorrectly found in GITHUB_OUTPUT)"
+    cat "$TEST_GITHUB_OUTPUT"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  echo "PASSED"
+  rm -f "$output_file"
+}
+
+# A. Empty output (exit 0) -> needs_update=false
+DOCKER_RUN_OUTPUT="" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Empty output (exit 0)" "unknown-app" "false" "Image OS is up-to-date"
+
+# B. Whitespace-only output (exit 0) -> needs_update=false
+DOCKER_RUN_OUTPUT="
+  " DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Whitespace-only output (exit 0)" "unknown-app" "false" "Image OS is up-to-date"
+
+# C. Alpine style updates (exit 0) -> needs_update=true
+DOCKER_RUN_OUTPUT="libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Alpine style updates (exit 0)" "unknown-app" "true" "OS Updates detected"
+
+# D. Debian Inst lines (exit 0) -> needs_update=true
+DOCKER_RUN_OUTPUT="Inst bash [5.0-6ubuntu1.1] (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Inst lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+
+# E. Debian Conf lines (exit 0) -> needs_update=true
+DOCKER_RUN_OUTPUT="Conf bash (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Conf lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+
+# F. executable file not found in stderr (exit non-zero) -> skipped, needs_update=false
+DOCKER_RUN_STDERR="docker: Error response from daemon: OCI runtime create failed: container_linux.go:349: starting container process caused \"exec: \\\"sh\\\": executable file not found in \$PATH\": unknown." DOCKER_RUN_EXIT_CODE=127 run_os_check_test "executable file not found in stderr" "unknown-app" "false" "Image has no shell"
+
+# G. Only filtered strings (fetch http, WARNING) -> needs_update=false
+DOCKER_RUN_OUTPUT="fetch http://dl-cdn.alpinelinux.org/alpine/v3.18/main/x86_64/APKINDEX.tar.gz
+WARNING: Ignoring APKINDEX.d4f...: No such file or directory" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Only filtered strings" "unknown-app" "false" "Image OS is up-to-date"
+
+# H. Mixed filtered strings and valid updates -> needs_update=true
+DOCKER_RUN_OUTPUT="fetch http://dl-cdn.alpinelinux.org/alpine/v3.18/main/x86_64/APKINDEX.tar.gz
+WARNING: Ignoring APKINDEX.d4f...: No such file or directory
+libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Mixed filtered strings and valid updates" "unknown-app" "true" "OS Updates detected"
+
+# I. Non-zero exit code with unknown error (characterization test)
+# Known limitation: check_update.sh doesn't strictly check the docker run exit code unless it matches "executable file not found".
+# Any other error output that contains alphanumeric characters might incorrectly trigger "needs_update=true".
+DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with unknown error" "unknown-app" "true" "OS Updates detected"
+
+# J. Non-zero exit code with empty output (characterization test)
+# Known limitation: Empty output with non-zero exit code still results in needs_update=false.
+DOCKER_RUN_OUTPUT="" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with empty output" "unknown-app" "false" "Image OS is up-to-date"
 
 if [ "$FAILED" -ne 0 ]; then
   echo "Some tests failed."
