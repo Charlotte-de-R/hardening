@@ -5,15 +5,20 @@ set -euo pipefail
 STUB_DIR=$(mktemp -d)
 TEST_GITHUB_OUTPUT=$(mktemp)
 CURL_LOG=$(mktemp)
+DOCKER_LOG=$(mktemp)
 
 cleanup() {
-  rm -rf "$STUB_DIR" "$TEST_GITHUB_OUTPUT" "$CURL_LOG"
+  rm -rf "$STUB_DIR" "$TEST_GITHUB_OUTPUT" "$CURL_LOG" "$DOCKER_LOG"
 }
 trap cleanup EXIT
 
 # Create docker stub
 cat <<'EOF' > "$STUB_DIR/docker"
 #!/bin/bash
+echo "$@" >> "$DOCKER_LOG"
+if [ "${1:-}" = "pull" ] && [ -n "${DOCKER_PULL_EXIT_CODE:-}" ]; then
+  exit "$DOCKER_PULL_EXIT_CODE"
+fi
 exit 0
 EOF
 
@@ -30,6 +35,7 @@ chmod +x "$STUB_DIR/docker" "$STUB_DIR/curl"
 export PATH="$STUB_DIR:$PATH"
 export GITHUB_OUTPUT="$TEST_GITHUB_OUTPUT"
 export CURL_LOG="$CURL_LOG"
+export DOCKER_LOG="$DOCKER_LOG"
 
 FAILED=0
 
@@ -185,6 +191,182 @@ run_mapping_test "unknown-app unmonitored fallback" "unknown-app" "" ""
 
 # 11. Registry path + tag input (ghcr.io/org/vaultwarden:v1.0.0)
 run_mapping_test "registry path and tag mapping" "ghcr.io/org/vaultwarden:v1.0.0" "dani-garcia/vaultwarden" "1.0.0"
+
+
+# --- Docker pull failure tests ---
+run_docker_pull_failure_test() {
+  local test_name="$1"
+  local image_arg="$2"
+  local expected_latest_version="$3" # Expected latest_version in GITHUB_OUTPUT ("" if not expecting it)
+
+  echo -n "Running docker pull failure test: $test_name... "
+
+  # Reset temporary logs
+  > "$CURL_LOG"
+  > "$DOCKER_LOG"
+  > "$TEST_GITHUB_OUTPUT"
+
+  local output_file
+  output_file=$(mktemp)
+  local actual_code=0
+
+  # Override DOCKER_PULL_EXIT_CODE only for this execution
+  set +e
+  DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "$image_arg" >"$output_file" 2>&1
+  actual_code=$?
+  set -e
+
+  if [ "$actual_code" -ne 0 ]; then
+    echo "FAILED (Expected exit code 0, got $actual_code)"
+    cat "$output_file"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if ! grep -q "Image does not exist remotely. Triggering build." "$output_file"; then
+    echo "FAILED (Expected missing image message not found in output)"
+    cat "$output_file"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if ! grep -Fxq "needs_update=true" "$TEST_GITHUB_OUTPUT"; then
+    echo "FAILED (needs_update=true not found in GITHUB_OUTPUT)"
+    cat "$TEST_GITHUB_OUTPUT"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if grep -Fxq "needs_update=false" "$TEST_GITHUB_OUTPUT"; then
+    echo "FAILED (needs_update=false was incorrectly found in GITHUB_OUTPUT)"
+    cat "$TEST_GITHUB_OUTPUT"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  # Check that docker run was not called
+  if grep -q "^run " "$DOCKER_LOG"; then
+    echo "FAILED (docker run was incorrectly called)"
+    cat "$DOCKER_LOG"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if [ -z "$expected_latest_version" ]; then
+    # If no version expected, we expect no curl to be called
+    if [ -s "$CURL_LOG" ]; then
+      echo "FAILED (curl was called but no API call was expected)"
+      cat "$CURL_LOG"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+  else
+    local expected_output="latest_version=${expected_latest_version}"
+    if ! grep -Fxq "$expected_output" "$TEST_GITHUB_OUTPUT"; then
+      echo "FAILED (expected $expected_output not found in GITHUB_OUTPUT)"
+      cat "$TEST_GITHUB_OUTPUT"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+  fi
+
+  echo "PASSED"
+  rm -f "$output_file"
+}
+
+# A. Unregistered image + docker pull failure
+run_docker_pull_failure_test "Unregistered image + docker pull failure" "unknown-app" ""
+
+# B. Registered image + docker pull failure + GitHub API success
+run_docker_pull_failure_test "Registered image (vaultwarden) + docker pull failure" "vaultwarden" "1.0.0"
+
+# C. Registered image + docker pull failure + GitHub API failure
+run_docker_pull_failure_api_fail_test() {
+  local test_name="Registered image (vaultwarden) + docker pull failure + GitHub API failure"
+  echo -n "Running docker pull failure test: $test_name... "
+
+  # Reset temporary logs
+  > "$CURL_LOG"
+  > "$DOCKER_LOG"
+  > "$TEST_GITHUB_OUTPUT"
+
+  # Override curl stub temporarily
+  cat <<'EOF' > "$STUB_DIR/curl"
+#!/bin/bash
+echo "$@" >> "$CURL_LOG"
+echo '{"tag_name": "null"}'
+exit 0
+EOF
+
+  local output_file
+  output_file=$(mktemp)
+  local actual_code=0
+
+  set +e
+  DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "vaultwarden" >"$output_file" 2>&1
+  actual_code=$?
+  set -e
+
+  # Restore curl stub
+  cat <<'EOF' > "$STUB_DIR/curl"
+#!/bin/bash
+echo "$@" >> "$CURL_LOG"
+echo '{"tag_name": "v1.0.0"}'
+exit 0
+EOF
+
+  if [ "$actual_code" -ne 0 ]; then
+    echo "FAILED (Expected exit code 0, got $actual_code)"
+    cat "$output_file"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if ! grep -q "Image does not exist remotely. Triggering build." "$output_file"; then
+    echo "FAILED (Expected missing image message not found in output)"
+    cat "$output_file"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if ! grep -Fxq "needs_update=true" "$TEST_GITHUB_OUTPUT"; then
+    echo "FAILED (needs_update=true not found in GITHUB_OUTPUT)"
+    cat "$TEST_GITHUB_OUTPUT"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  if grep -Fxq "needs_update=false" "$TEST_GITHUB_OUTPUT"; then
+    echo "FAILED (needs_update=false was incorrectly found in GITHUB_OUTPUT)"
+    cat "$TEST_GITHUB_OUTPUT"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  # Check that docker run was not called
+  if grep -q "^run " "$DOCKER_LOG"; then
+    echo "FAILED (docker run was incorrectly called)"
+    cat "$DOCKER_LOG"
+    FAILED=1
+    rm -f "$output_file"
+    return
+  fi
+
+  echo "PASSED"
+  rm -f "$output_file"
+}
+run_docker_pull_failure_api_fail_test
 
 if [ "$FAILED" -ne 0 ]; then
   echo "Some tests failed."
