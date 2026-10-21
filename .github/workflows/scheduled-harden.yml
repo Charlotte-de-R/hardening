@@ -93,7 +93,7 @@ jobs:
         run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
 
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
 
       - name: Make scripts executable
         run: chmod +x update_dockerfiles.sh check_update.sh
@@ -104,17 +104,17 @@ jobs:
         run: ./update_dockerfiles.sh "$TARGET_CONTEXT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        uses: docker/login-action@d3b9cdfa580156c018ca5e745c1bf653d8ea46b5
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409
+        uses: sigstore/cosign-installer@b9c35392b7c1401bcc77d30c9b07cf4b1c7a7b07
 
       - name: Check Updates
         id: check
@@ -141,7 +141,7 @@ jobs:
       - name: Build Locally
         id: build
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
@@ -172,7 +172,7 @@ jobs:
 
       - name: Upload Trivy SARIF results to GitHub Security
         if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure')
-        uses: github/codeql-action/upload-sarif@5c8ea125689a2c5ae2672d1d914ac4bcd95d1b4b
+        uses: github/codeql-action/upload-sarif@4e7f1a8de7dec137efca173f7b203e1bbbde5b58
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-${{ matrix.name }}'
