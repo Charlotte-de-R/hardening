@@ -1,0 +1,50 @@
+name: Daily Jules Security Triage
+
+on:
+  schedule:
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: jules-security-triage
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  security-events: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Jules investigation
+        uses: google-labs-code/jules-action@v1
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          prompt: |
+            対象リポジトリ: Charlotte-de-R/hardening
+            目的: GitHub Code scanning の未処理Trivyアラートを調査し、
+            リポジトリ内で安全に修正できるものだけを最小限のPRにする。
+
+            手順:
+            1. Code scanningのopenアラートから、CriticalとHighのみを収集する。
+            2. すでに対応済み、誤検出、上流イメージ更新待ちのものは分類する。
+            3. CVE、脆弱パッケージ、現在バージョン、修正版、修正PR有無を調査する。
+            4. 次の優先度で対応する。
+               - Immich Server内のhandlebars
+               - libxml2 / OpenEXR関連
+               - linux-libc-devなどOSパッケージ関連
+            5. 修正可能なものだけ、コンポーネント単位の独立PRを作成する。
+            6. 上流ベースイメージ待ちのPHP・Node.jsは、無理に置換せず報告する。
+
+            制約:
+            - NextcloudではDebian sidの追加や大規模apt upgradeを行わない
+            - universal hardeningテンプレートの適用対象を勝手に変更しない
+            - Immich・CryptPadのNode.jsをバイナリ置換や強制固定で直さない
+            - Trivyアラートを根拠なくdismissしない
+            - scheduled-harden.ymlの署名検証・スキャン設定を勝手に変更しない
+            - 1PRにつき1コンポーネントまたは密接に関連するアラート群に限定する
+            - PR本文にCVE、修正版、変更理由、検証方法、残存リスクを書く
+          title: "Daily security triage: Trivy Critical/High alerts"
