@@ -47,4 +47,3 @@ jobs:
             - scheduled-harden.ymlの署名検証・スキャン設定を勝手に変更しない
             - 1PRにつき1コンポーネントまたは密接に関連するアラート群に限定する
             - PR本文にCVE、修正版、変更理由、検証方法、残存リスクを書く
-          title: "Daily security triage: Trivy Critical/High alerts"
