@@ -1,74 +1,63 @@
 ARG APP_VERSION="latest"
 
-# Stage 0: 元のイメージをエイリアス（後でUIファイルを吸い出すため）
+# Stage 0: 公式イメージからUIと既定の実行環境を取得
 FROM portainer/portainer-ce:${APP_VERSION} AS base
 
-# Stage 1: Builder (最新Goコンパイラでコアバイナリを再ビルド)
+# Stage 1: コアバイナリを再ビルド
 FROM golang:alpine AS builder
 ARG APP_VERSION
+ARG TARGETARCH=amd64
 
 RUN apk add --no-cache git ca-certificates
 
 RUN if [ "${APP_VERSION}" = "latest" ]; then \
         git clone --depth 1 https://github.com/portainer/portainer.git /go/src/portainer; \
     else \
-        git clone --depth 1 --branch ${APP_VERSION} https://github.com/portainer/portainer.git /go/src/portainer; \
+        git clone --depth 1 --branch "${APP_VERSION}" https://github.com/portainer/portainer.git /go/src/portainer; \
     fi
 
 WORKDIR /go/src/portainer
 
-# CVE-2026-50195 / CVE-2026-53488: containerd 依存を修正済みバージョンへ更新
-RUN cd api && \
-    go get github.com/containerd/containerd@v1.7.33 && \
-    go mod tidy
-
 RUN cd api && \
     go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -trimpath \
-    --installsuffix cgo \
-    --ldflags "-s -w" \
-    -o /go/bin/portainer \
-    ./cmd/portainer/
+    CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build \
+      -trimpath \
+      --installsuffix cgo \
+      --ldflags "-s -w" \
+      -o /go/bin/portainer \
+      ./cmd/portainer/
 
-# Stage 2: Patcher (手術室：Alpine環境で安全にパッチを適用)
 FROM alpine AS patcher
 RUN apk add --no-cache curl nodejs npm
 
-# 公式イメージからフロントエンド(UI)ディレクトリを吸い出す
 COPY --from=base /public /app/public
 
-# RCE脆弱性のある lodash を最新版へ外科的置換
 RUN mkdir -p /tmp/patch && cd /tmp/patch && \
-    npm init -y && npm install lodash@latest && \
+    npm init -y && \
+    npm install lodash@4.17.21 && \
     find /app/public -type d -name "lodash" 2>/dev/null | while read -r target; do \
-        echo "Patching lodash at: $target"; \
-        rm -rf "$target"/* && cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
+      echo "Patching lodash at: $target"; \
+      rm -rf "$target"/* && \
+      cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
     done
 
-# 脆弱性のないクリーンな Docker CLI バイナリを取得 (CVE-2024-24790, CVE-2026-17106 修正済み)
 ARG DOCKER_CLI_VERSION="29.7.2"
 RUN curl -fsSLO "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" && \
-    tar xzvf "docker-${DOCKER_CLI_VERSION}.tgz" && \
+    tar -xzf "docker-${DOCKER_CLI_VERSION}.tgz" && \
     mkdir -p /app/bin && \
     cp docker/docker /app/bin/docker
 
-# Stage 3: Final Image (Distroless環境への直接インジェクション)
+# Stage 3: 最終イメージ
 FROM portainer/portainer-ce:${APP_VERSION}
 
 ARG APP_VERSION
+ARG TARGETARCH=amd64
+
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
-LABEL org.opencontainers.image.description="Portainer (Hardened, Distroless-Compatible)"
+LABEL org.opencontainers.image.description="Portainer CE (hardened build)"
 
-# 1. CVE-freeな自前ビルドのコアバイナリと証明書で上書き
 COPY --from=builder /go/bin/portainer /portainer
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-
-# 2. Stage 2の手術室で「lodash」をパッチ済みのUIファイルで上書き
 COPY --from=patcher /app/public /public
-
-# 3. 脆弱性のある同梱Docker CLIをクリーンなもので上書き
 COPY --from=patcher /app/bin/docker /docker
-
-# 💡 RUN コマンドは使用しないため、シェルが存在しないDistroless環境でも絶対にクラッシュしません。
