@@ -40,28 +40,39 @@ RUN mkdir -p /tmp/patch && \
     cd /tmp/patch && \
     npm init -y && \
     npm install protobufjs@7.5.5 && \
-    find /usr/src/app/server/node_modules -type d -name "protobufjs" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch/node_modules/protobufjs/* "$1/"' _ {} \; && \
-    rm -rf /tmp/patch
+    find /usr/src/app/server/node_modules -type d -name "protobufjs" -prune > /tmp/protobufjs_dirs.txt && \
+    COUNT=$(wc -l < /tmp/protobufjs_dirs.txt) && \
+    if [ "$COUNT" -eq 0 ]; then echo "Error: No protobufjs instance found to patch."; exit 1; fi && \
+    while IFS= read -r dir; do \
+        rm -rf "$dir" && cp -a /tmp/patch/node_modules/protobufjs "$dir"; \
+    done < /tmp/protobufjs_dirs.txt && \
+    rm -rf /tmp/patch /tmp/protobufjs_dirs.txt
 
 # ★ proxy-addr を 2.0.8 (CVE-2026-90711 対策) に外科的置換
 RUN mkdir -p /tmp/patch-proxy && cd /tmp/patch-proxy && \
     npm init -y && \
     npm install proxy-addr@2.0.8 && \
-    find /usr/src/app/server/node_modules -type d -name "proxy-addr" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch-proxy/node_modules/proxy-addr/* "$1/"' _ {} \; && \
-    rm -rf /tmp/patch-proxy
+    find /usr/src/app/server/node_modules -type d -name "proxy-addr" -prune > /tmp/proxy_dirs.txt && \
+    COUNT=$(wc -l < /tmp/proxy_dirs.txt) && \
+    if [ "$COUNT" -eq 0 ]; then echo "Error: No proxy-addr instance found to patch."; exit 1; fi && \
+    while IFS= read -r dir; do \
+        rm -rf "$dir" && cp -a /tmp/patch-proxy/node_modules/proxy-addr "$dir"; \
+    done < /tmp/proxy_dirs.txt && \
+    rm -rf /tmp/patch-proxy /tmp/proxy_dirs.txt
 
 # ★ handlebars を 4.7.10 に外科的置換 (動的検出)
 RUN mkdir -p /tmp/patch-handlebars && cd /tmp/patch-handlebars && \
     npm init -y && \
     npm install handlebars@4.7.10 && \
     echo "Searching for handlebars directories..." && \
-    find /usr/src/app/server/node_modules -type d -name "handlebars" > /tmp/handlebars_dirs.txt && \
+    find /usr/src/app/server/node_modules -type d -name "handlebars" -prune > /tmp/handlebars_dirs.txt && \
     COUNT=$(wc -l < /tmp/handlebars_dirs.txt) && \
     echo "Found $COUNT handlebars instance(s) to patch." && \
+    if [ "$COUNT" -eq 0 ]; then echo "Error: No handlebars instance found to patch."; exit 1; fi && \
     while IFS= read -r dir; do \
         echo "Patching: $dir"; \
-        rm -rf "$dir"/* && \
-        cp -a /tmp/patch-handlebars/node_modules/handlebars/* "$dir"/; \
+        rm -rf "$dir" && \
+        cp -a /tmp/patch-handlebars/node_modules/handlebars "$dir"; \
     done < /tmp/handlebars_dirs.txt && \
     rm -rf /tmp/patch-handlebars /tmp/handlebars_dirs.txt
 
@@ -88,11 +99,24 @@ function findPackageJson(dir) {\
 const pkgs = findPackageJson('/usr/src/app/server/node_modules');\
 if (pkgs.length === 0) { console.error('Error: No handlebars packages found.'); process.exit(1); }\
 pkgs.forEach(pkg => {\
+  const pkgDir = path.dirname(pkg);\
+  const runtimeJsPath = path.join(pkgDir, 'dist/cjs/handlebars.runtime.js');\
+  if (!fs.existsSync(runtimeJsPath)) {\
+    console.error('Validation failed! dist/cjs/handlebars.runtime.js not found in ' + pkgDir);\
+    process.exit(1);\
+  }\
   const version = require(pkg).version;\
   console.log('Found handlebars version', version, 'at', pkg);\
   const v = version.split('.').map(Number);\
   if (v[0] < 4 || (v[0] === 4 && v[1] < 7) || (v[0] === 4 && v[1] === 7 && v[2] < 10)) {\
     console.error('Validation failed! Version is less than 4.7.10.');\
+    process.exit(1);\
+  }\
+  try {\
+    require(pkgDir);\
+    console.log('Successfully required handlebars from ' + pkgDir);\
+  } catch(e) {\
+    console.error('Validation failed! Could not require handlebars from ' + pkgDir, e);\
     process.exit(1);\
   }\
 });\
