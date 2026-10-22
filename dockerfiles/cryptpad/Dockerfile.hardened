@@ -1,18 +1,18 @@
+FROM node:24-alpine AS node-runtime
+
 FROM cryptpad/cryptpad:latest
 
 USER root
 
-# Alpine Linux 用の最新パッケージの適用とキャッシュの完全パージ
 RUN apk update && \
     apk upgrade --no-cache && \
-    rm -rf /var/cache/apk/*
+    rm -rf /var/lib/apk/* /var/cache/apk/*
 
-# ★修正箇所: npm依存関係の監査と protobufjs の Critical (RCE) 脆弱性の修正
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+
 WORKDIR /cryptpad
-RUN npm audit fix --force || true \
-    && npm install protobufjs@latest
 
-# 権限昇格コマンドの削除
 RUN rm -f /bin/su /usr/bin/sudo || true
 
 USER 4001
