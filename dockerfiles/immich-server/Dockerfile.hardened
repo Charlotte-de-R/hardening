@@ -18,6 +18,7 @@ RUN apt-get update && \
     apt-get dist-upgrade -y && \
     apt-get install -y --no-install-recommends \
         libexpat1 \
+        libxml2 \
         zlib1g \
         libsqlite3-0 \
         openssl \
@@ -48,6 +49,54 @@ RUN mkdir -p /tmp/patch-proxy && cd /tmp/patch-proxy && \
     npm install proxy-addr@2.0.8 && \
     find /usr/src/app/server/node_modules -type d -name "proxy-addr" -exec sh -c 'rm -rf "$1"/* && cp -a /tmp/patch-proxy/node_modules/proxy-addr/* "$1/"' _ {} \; && \
     rm -rf /tmp/patch-proxy
+
+# ★ handlebars を 4.7.10 に外科的置換 (動的検出)
+RUN mkdir -p /tmp/patch-handlebars && cd /tmp/patch-handlebars && \
+    npm init -y && \
+    npm install handlebars@4.7.10 && \
+    echo "Searching for handlebars directories..." && \
+    find /usr/src/app/server/node_modules -type d -name "handlebars" > /tmp/handlebars_dirs.txt && \
+    COUNT=$(wc -l < /tmp/handlebars_dirs.txt) && \
+    echo "Found $COUNT handlebars instance(s) to patch." && \
+    while IFS= read -r dir; do \
+        echo "Patching: $dir"; \
+        rm -rf "$dir"/* && \
+        cp -a /tmp/patch-handlebars/node_modules/handlebars/* "$dir"/; \
+    done < /tmp/handlebars_dirs.txt && \
+    rm -rf /tmp/patch-handlebars /tmp/handlebars_dirs.txt
+
+# handlebars バージョン検証
+RUN node -e "\
+const fs = require('fs');\
+const path = require('path');\
+function findPackageJson(dir) {\
+  let results = [];\
+  const files = fs.readdirSync(dir, { withFileTypes: true });\
+  for (const file of files) {\
+    if (file.isSymbolicLink()) {\
+      continue;\
+    }\
+    if (file.isDirectory() && file.name === 'handlebars') {\
+      const pkgPath = path.join(dir, file.name, 'package.json');\
+      if (fs.existsSync(pkgPath)) results.push(pkgPath);\
+    } else if (file.isDirectory()) {\
+      results = results.concat(findPackageJson(path.join(dir, file.name)));\
+    }\
+  }\
+  return results;\
+}\
+const pkgs = findPackageJson('/usr/src/app/server/node_modules');\
+if (pkgs.length === 0) { console.error('Error: No handlebars packages found.'); process.exit(1); }\
+pkgs.forEach(pkg => {\
+  const version = require(pkg).version;\
+  console.log('Found handlebars version', version, 'at', pkg);\
+  const v = version.split('.').map(Number);\
+  if (v[0] < 4 || (v[0] === 4 && v[1] < 7) || (v[0] === 4 && v[1] === 7 && v[2] < 10)) {\
+    console.error('Validation failed! Version is less than 4.7.10.');\
+    process.exit(1);\
+  }\
+});\
+console.log('All handlebars instances validated successfully.');"
 
 # OpenEXR パーサーの無効化（CVE-2026-34543 / CVE-2025-64181 等の対策）
 RUN for p in /etc/ImageMagick-*/policy.xml; do \
