@@ -230,13 +230,13 @@ jobs:
 
           if [[ "$TARGET_IMAGE" == "nextcloud" ]]; then
             BUILD_ARGS="NEXTCLOUD_MIN_VERSION=${NEXTCLOUD_MIN_VERSION}"
-          elif [[ "$TARGET_IMAGE" == "immich-server" || "$TARGET_IMAGE" == "immich-machine-learning" ]]; then
+          elif [[ "$TARGET_IMAGE" == "immich-server" || "$TARGET_IMAGE" == "immich-machine-learning" || "$TARGET_IMAGE" == "tetragon" ]]; then
             if [[ -z "$UPDATE_VERSION" ]]; then
-              echo "::error::Immich APP_VERSION was not resolved by check_update.sh"
+              echo "::error::APP_VERSION was not resolved by check_update.sh for $TARGET_IMAGE"
               exit 1
             fi
             if [[ ! "$UPDATE_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::Invalid Immich APP_VERSION: $UPDATE_VERSION"
+              echo "::error::Invalid APP_VERSION for $TARGET_IMAGE: $UPDATE_VERSION"
               exit 1
             fi
             BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
