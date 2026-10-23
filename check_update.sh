@@ -288,6 +288,9 @@ if [[ -n "$REPO" ]]; then
       cryptpad)
         BASE_IMAGE_REF="cryptpad/cryptpad:version-${DESIRED_VER}"
         ;;
+      tetragon)
+        BASE_IMAGE_REF="quay.io/cilium/tetragon:${DESIRED_VER}"
+        ;;
       immich-server)
         BASE_IMAGE_REF="ghcr.io/immich-app/immich-server:${DESIRED_VER}"
         ;;
