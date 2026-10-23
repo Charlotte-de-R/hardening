@@ -288,6 +288,12 @@ if [[ -n "$REPO" ]]; then
       cryptpad)
         BASE_IMAGE_REF="cryptpad/cryptpad:version-${DESIRED_VER}"
         ;;
+      immich-server)
+        BASE_IMAGE_REF="ghcr.io/immich-app/immich-server:${DESIRED_VER}"
+        ;;
+      immich-machine-learning)
+        BASE_IMAGE_REF="ghcr.io/immich-app/immich-machine-learning:${DESIRED_VER}"
+        ;;
       *)
         BASE_IMAGE_REF="${REPO}:${DESIRED_VER}"
         ;;
