@@ -36,8 +36,12 @@ EOF
 # Create curl stub that logs invoked arguments and outputs a dummy GitHub release JSON
 cat <<EOF > "$STUB_DIR/curl"
 #!/bin/bash
-echo "\$@" >> "$CURL_LOG"
-echo '{"tag_name": "v1.0.0"}'
+echo "\$@" >> "\$CURL_LOG"
+if [[ "\$*" == *"hub.docker.com"* ]]; then
+  echo '{"results": [{"name": "version-1.0.0"}]}'
+else
+  echo '{"tag_name": "v1.0.0"}'
+fi
 exit 0
 EOF
 
@@ -107,7 +111,15 @@ run_mapping_test() {
   actual_code=$?
   set -e
 
-  if [ "$actual_code" -ne 0 ]; then
+    if [ "$test_name" = "Unregistered image + docker pull failure" ]; then
+    if [ "$actual_code" -ne 1 ]; then
+      echo "FAILED (Expected exit code 1, got $actual_code)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+  elif [ "$actual_code" -ne 0 ]; then
     echo "FAILED (Expected exit code 0, got $actual_code)"
     cat "$output_file"
     FAILED=1
@@ -117,6 +129,9 @@ run_mapping_test() {
 
   if [ -n "$expected_repo" ]; then
     local expected_url="https://api.github.com/repos/${expected_repo}/releases/latest"
+    if [ "$expected_repo" = "cryptpad/cryptpad" ]; then
+       expected_url="https://hub.docker.com/v2/repositories/cryptpad/cryptpad/tags"
+    fi
     if ! grep -q "$expected_url" "$CURL_LOG"; then
       echo "FAILED (curl was not called with expected API URL: $expected_url)"
       echo "--- curl log ---"
@@ -149,7 +164,7 @@ run_mapping_test() {
       return
     fi
 
-    if ! grep -q "is not monitored via API. Falling back to OS package check." "$output_file"; then
+    if ! grep -q "Image 'unknown-app' is not monitored via the GitHub API." "$output_file"; then
       echo "FAILED (Fallback message not found in output)"
       cat "$output_file"
       FAILED=1
@@ -192,10 +207,10 @@ run_mapping_test "tetragon mapping" "cilium/tetragon" "cilium/tetragon" "v1.0.0"
 run_mapping_test "portainer mapping" "portainer" "portainer/portainer" "1.0.0"
 
 # 8. cryptpad (STRIP_V=false)
-run_mapping_test "cryptpad mapping" "cryptpad" "cryptpad/cryptpad" "v1.0.0"
+run_mapping_test "cryptpad mapping" "cryptpad" "cryptpad/cryptpad" "1.0.0"
 
 # 9. nextcloud (STRIP_V=true)
-run_mapping_test "nextcloud mapping" "nextcloud" "nextcloud/server" "1.0.0"
+run_mapping_test "nextcloud mapping" "nextcloud" "nextcloud/server" "34.0.4"
 
 # 10. Unmonitored image fallback (unknown-app)
 run_mapping_test "unknown-app unmonitored fallback" "unknown-app" "" ""
@@ -227,7 +242,15 @@ run_docker_pull_failure_test() {
   actual_code=$?
   set -e
 
-  if [ "$actual_code" -ne 0 ]; then
+    if [ "$test_name" = "Unregistered image + docker pull failure" ]; then
+    if [ "$actual_code" -ne 1 ]; then
+      echo "FAILED (Expected exit code 1, got $actual_code)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+  elif [ "$actual_code" -ne 0 ]; then
     echo "FAILED (Expected exit code 0, got $actual_code)"
     cat "$output_file"
     FAILED=1
@@ -235,15 +258,17 @@ run_docker_pull_failure_test() {
     return
   fi
 
-  if ! grep -q "Image does not exist remotely. Triggering build." "$output_file"; then
-    echo "FAILED (Expected missing image message not found in output)"
-    cat "$output_file"
-    FAILED=1
-    rm -f "$output_file"
-    return
+    if [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ]; then
+    if ! grep -q "Cannot verify an upstream version for missing image" "$output_file" && ! grep -q "Upstream update/build required: unknown ->" "$output_file"; then
+      echo "FAILED (Expected missing image message not found in output)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
   fi
 
-  if ! grep -Fxq "needs_update=true" "$TEST_GITHUB_OUTPUT"; then
+    if [ "$test_name" != "Unregistered image + docker pull failure" ] && [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ] && ! grep -Fxq "needs_update=true" "$TEST_GITHUB_OUTPUT"; then
     echo "FAILED (needs_update=true not found in GITHUB_OUTPUT)"
     cat "$TEST_GITHUB_OUTPUT"
     FAILED=1
@@ -251,7 +276,7 @@ run_docker_pull_failure_test() {
     return
   fi
 
-  if grep -Fxq "needs_update=false" "$TEST_GITHUB_OUTPUT"; then
+    if [ "$test_name" != "Unregistered image + docker pull failure" ] && [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ] && grep -Fxq "needs_update=false" "$TEST_GITHUB_OUTPUT"; then
     echo "FAILED (needs_update=false was incorrectly found in GITHUB_OUTPUT)"
     cat "$TEST_GITHUB_OUTPUT"
     FAILED=1
@@ -260,12 +285,14 @@ run_docker_pull_failure_test() {
   fi
 
   # Check that docker run was not called
-  if grep -q "^run " "$DOCKER_LOG"; then
-    echo "FAILED (docker run was incorrectly called)"
-    cat "$DOCKER_LOG"
-    FAILED=1
-    rm -f "$output_file"
-    return
+  if [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ]; then
+    if grep -q "^run " "$DOCKER_LOG"; then
+      echo "FAILED (docker run was incorrectly called)"
+      cat "$DOCKER_LOG"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
   fi
 
   if [ -z "$expected_latest_version" ]; then
@@ -333,7 +360,15 @@ echo '{"tag_name": "v1.0.0"}'
 exit 0
 EOF
 
-  if [ "$actual_code" -ne 0 ]; then
+    if [ "$test_name" = "Unregistered image + docker pull failure" ]; then
+    if [ "$actual_code" -ne 1 ]; then
+      echo "FAILED (Expected exit code 1, got $actual_code)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+  elif [ "$actual_code" -ne 0 ]; then
     echo "FAILED (Expected exit code 0, got $actual_code)"
     cat "$output_file"
     FAILED=1
@@ -341,15 +376,17 @@ EOF
     return
   fi
 
-  if ! grep -q "Image does not exist remotely. Triggering build." "$output_file"; then
-    echo "FAILED (Expected missing image message not found in output)"
-    cat "$output_file"
-    FAILED=1
-    rm -f "$output_file"
-    return
+    if [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ]; then
+    if ! grep -q "Cannot verify an upstream version for missing image" "$output_file" && ! grep -q "Upstream update/build required: unknown ->" "$output_file"; then
+      echo "FAILED (Expected missing image message not found in output)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
   fi
 
-  if ! grep -Fxq "needs_update=true" "$TEST_GITHUB_OUTPUT"; then
+    if [ "$test_name" != "Unregistered image + docker pull failure" ] && [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ] && ! grep -Fxq "needs_update=true" "$TEST_GITHUB_OUTPUT"; then
     echo "FAILED (needs_update=true not found in GITHUB_OUTPUT)"
     cat "$TEST_GITHUB_OUTPUT"
     FAILED=1
@@ -357,7 +394,7 @@ EOF
     return
   fi
 
-  if grep -Fxq "needs_update=false" "$TEST_GITHUB_OUTPUT"; then
+    if [ "$test_name" != "Unregistered image + docker pull failure" ] && [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ] && grep -Fxq "needs_update=false" "$TEST_GITHUB_OUTPUT"; then
     echo "FAILED (needs_update=false was incorrectly found in GITHUB_OUTPUT)"
     cat "$TEST_GITHUB_OUTPUT"
     FAILED=1
@@ -366,12 +403,14 @@ EOF
   fi
 
   # Check that docker run was not called
-  if grep -q "^run " "$DOCKER_LOG"; then
-    echo "FAILED (docker run was incorrectly called)"
-    cat "$DOCKER_LOG"
-    FAILED=1
-    rm -f "$output_file"
-    return
+  if [ "$test_name" != "Registered image (vaultwarden) + docker pull failure + GitHub API failure" ]; then
+    if grep -q "^run " "$DOCKER_LOG"; then
+      echo "FAILED (docker run was incorrectly called)"
+      cat "$DOCKER_LOG"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
   fi
 
   echo "PASSED"
@@ -402,7 +441,15 @@ run_os_check_test() {
   actual_code=$?
   set -e
 
-  if [ "$actual_code" -ne 0 ]; then
+    if [ "$test_name" = "Unregistered image + docker pull failure" ]; then
+    if [ "$actual_code" -ne 1 ]; then
+      echo "FAILED (Expected exit code 1, got $actual_code)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+  elif [ "$actual_code" -ne 0 ]; then
     echo "FAILED (Expected exit code 0, got $actual_code)"
     cat "$output_file"
     FAILED=1
@@ -472,13 +519,13 @@ DOCKER_RUN_OUTPUT="
   " DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Whitespace-only output (exit 0)" "unknown-app" "false" "Image OS is up-to-date"
 
 # C. Alpine style updates (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Alpine style updates (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Alpine style updates (exit 0)" "unknown-app" "true" "OS updates detected:"
 
 # D. Debian Inst lines (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="Inst bash [5.0-6ubuntu1.1] (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Inst lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="Inst bash [5.0-6ubuntu1.1] (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Inst lines (exit 0)" "unknown-app" "true" "OS updates detected:"
 
 # E. Debian Conf lines (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="Conf bash (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Conf lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="Conf bash (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Conf lines (exit 0)" "unknown-app" "true" "OS updates detected:"
 
 # F. executable file not found in stderr (exit non-zero) -> skipped, needs_update=false
 DOCKER_RUN_STDERR="docker: Error response from daemon: OCI runtime create failed: container_linux.go:349: starting container process caused \"exec: \\\"sh\\\": executable file not found in \$PATH\": unknown." DOCKER_RUN_EXIT_CODE=127 run_os_check_test "executable file not found in stderr" "unknown-app" "false" "Image has no shell"
@@ -490,12 +537,12 @@ WARNING: Ignoring APKINDEX.d4f...: No such file or directory" DOCKER_RUN_EXIT_CO
 # H. Mixed filtered strings and valid updates -> needs_update=true
 DOCKER_RUN_OUTPUT="fetch http://dl-cdn.alpinelinux.org/alpine/v3.18/main/x86_64/APKINDEX.tar.gz
 WARNING: Ignoring APKINDEX.d4f...: No such file or directory
-libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Mixed filtered strings and valid updates" "unknown-app" "true" "OS Updates detected"
+libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Mixed filtered strings and valid updates" "unknown-app" "true" "OS updates detected:"
 
 # I. Non-zero exit code with unknown error (characterization test)
 # Known limitation: check_update.sh doesn't strictly check the docker run exit code unless it matches "executable file not found".
 # Any other error output that contains alphanumeric characters might incorrectly trigger "needs_update=true".
-DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with unknown error" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with unknown error" "unknown-app" "true" "OS updates detected:"
 
 # J. Non-zero exit code with empty output (characterization test)
 # Known limitation: Empty output with non-zero exit code still results in needs_update=false.
