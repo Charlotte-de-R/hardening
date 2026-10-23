@@ -266,20 +266,19 @@ jobs:
             echo "BUILD_ARGS_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push hardened image
+      - name: Build hardened image locally
         id: build
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
-          push: true
+          push: false
+          load: true
           tags: ${{ steps.image.outputs.image }}
           build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: true
-          sbom: true
 
       - name: Verify built Nextcloud version
         if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true')
@@ -289,8 +288,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          docker pull "$IMAGE"
 
           ACTUAL_VERSION=$(docker image inspect "$IMAGE" \
             --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
@@ -307,30 +304,6 @@ jobs:
 
           echo "Verified Nextcloud version: $ACTUAL_VERSION"
 
-      - name: Sign image with Cosign
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
-        continue-on-error: true
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cosign sign --yes "$IMAGE"
-
-      - name: Verify image signature
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
-        continue-on-error: true
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cosign verify "$IMAGE" \
-            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
-
       - name: Run Trivy vulnerability scan
         id: trivy
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
@@ -340,14 +313,66 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '0'
-          ignore-unfixed: false
+          exit-code: '1'
+          ignore-unfixed: true
           vuln-type: os,library
           scanners: vuln,misconfig,secret
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: always() && hashFiles('trivy-results.sarif') != ''
+        if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure') && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.name }}
+
+      - name: Push image to registry
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker push "$IMAGE"
+
+      - name: Get image digest
+        id: digest
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+          if [[ -z "$DIGEST" ]]; then
+            echo "::error::Could not retrieve image digest for $IMAGE"
+            exit 1
+          fi
+
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Image digest: $DIGEST"
+
+      - name: Sign image with Cosign
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        continue-on-error: true
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign sign --yes "$DIGEST"
+
+      - name: Verify image signature
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        continue-on-error: true
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify "$DIGEST" \
+            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"

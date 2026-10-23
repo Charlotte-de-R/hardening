@@ -34,10 +34,16 @@ exit 0
 EOF
 
 # Create curl stub that logs invoked arguments and outputs a dummy GitHub release JSON
-cat <<EOF > "$STUB_DIR/curl"
+cat <<'EOF' > "$STUB_DIR/curl"
 #!/bin/bash
-echo "\$@" >> "$CURL_LOG"
-echo '{"tag_name": "v1.0.0"}'
+echo "$@" >> "${CURL_LOG:-}"
+if [ -n "${CURL_STUB_OUTPUT:-}" ]; then
+  printf "%s\n" "${CURL_STUB_OUTPUT}"
+elif [[ "$*" == *"hub.docker.com"* ]]; then
+  echo '{"results": [{"name": "version-1.0.0"}]}'
+else
+  echo '{"tag_name": "v1.0.0"}'
+fi
 exit 0
 EOF
 
@@ -308,30 +314,14 @@ run_docker_pull_failure_api_fail_test() {
   > "$DOCKER_LOG"
   > "$TEST_GITHUB_OUTPUT"
 
-  # Override curl stub temporarily
-  cat <<'EOF' > "$STUB_DIR/curl"
-#!/bin/bash
-echo "$@" >> "$CURL_LOG"
-echo '{"tag_name": "null"}'
-exit 0
-EOF
-
   local output_file
   output_file=$(mktemp)
   local actual_code=0
 
   set +e
-  DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "vaultwarden" >"$output_file" 2>&1
+  CURL_STUB_OUTPUT='{"tag_name": "null"}' DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "vaultwarden" >"$output_file" 2>&1
   actual_code=$?
   set -e
-
-  # Restore curl stub
-  cat <<'EOF' > "$STUB_DIR/curl"
-#!/bin/bash
-echo "$@" >> "$CURL_LOG"
-echo '{"tag_name": "v1.0.0"}'
-exit 0
-EOF
 
   if [ "$actual_code" -ne 0 ]; then
     echo "FAILED (Expected exit code 0, got $actual_code)"
