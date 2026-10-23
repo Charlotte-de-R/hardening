@@ -1,8 +1,15 @@
+
+ARG APP_VERSION=2026.5.1
+
 FROM node:24-alpine AS node-runtime
 
-FROM cryptpad/cryptpad:latest
+FROM cryptpad/cryptpad:version-${APP_VERSION}
 
 USER root
+
+ARG APP_VERSION
+
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 RUN apk update && \
     apk upgrade --no-cache && \
