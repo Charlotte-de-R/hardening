@@ -31,7 +31,7 @@ on:
       nextcloud_min_version:
         description: 'Minimum allowed Nextcloud version'
         required: false
-        default: '34.0.4'
+        default: '35.0.2'
         type: string
 
       force_build:
@@ -133,7 +133,9 @@ jobs:
       REGISTRY: ghcr.io
       # Docker/OCI repository paths must be lowercase; github.repository preserves owner casing.
       IMAGE_NAME: ${{ github.repository }}
-      NEXTCLOUD_MIN_VERSION: ${{ inputs.nextcloud_min_version || '34.0.4' }}
+      NEXTCLOUD_MIN_VERSION: ${{ inputs.nextcloud_min_version || '35.0.2' }}
+      PHP_VERSION: '8.5.12'
+      NODE_VERSION: '24.16.0'
       FORCE_BUILD: ${{ inputs.force_build || false }}
 
     steps:
@@ -229,7 +231,11 @@ jobs:
           BUILD_ARGS=""
 
           if [[ "$TARGET_IMAGE" == "nextcloud" ]]; then
-            BUILD_ARGS="NEXTCLOUD_MIN_VERSION=${NEXTCLOUD_MIN_VERSION}"
+            if [[ -z "$UPDATE_VERSION" ]]; then
+              echo "::error::APP_VERSION was not resolved by check_update.sh for Nextcloud"
+              exit 1
+            fi
+            BUILD_ARGS=$(printf 'APP_VERSION=%s\nNEXTCLOUD_MIN_VERSION=%s' "$UPDATE_VERSION" "$NEXTCLOUD_MIN_VERSION")
           elif [[ "$TARGET_IMAGE" == "immich-server" || "$TARGET_IMAGE" == "immich-machine-learning" || "$TARGET_IMAGE" == "tetragon" ]]; then
             if [[ -z "$UPDATE_VERSION" ]]; then
               echo "::error::APP_VERSION was not resolved by check_update.sh for $TARGET_IMAGE"
@@ -251,7 +257,7 @@ jobs:
               exit 1
             fi
 
-            BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
+            BUILD_ARGS=$(printf 'APP_VERSION=%s\nNODE_VERSION=%s' "$UPDATE_VERSION" "$NODE_VERSION")
           fi
 
           echo "Build arguments prepared for $TARGET_IMAGE"
@@ -277,11 +283,12 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Verify built Nextcloud version
+      - name: Verify and smoke-test Nextcloud startup
         if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true')
         env:
           IMAGE: ${{ steps.image.outputs.image }}
           NEXTCLOUD_MIN_VERSION: ${{ env.NEXTCLOUD_MIN_VERSION }}
+          PHP_VERSION: ${{ env.PHP_VERSION }}
         shell: bash
         run: |
           set -euo pipefail
@@ -301,7 +308,66 @@ jobs:
             exit 1
           fi
 
-          echo "Verified Nextcloud version: $ACTUAL_VERSION"
+          ACTUAL_PHP=$(docker run --rm --entrypoint php "$IMAGE" -r 'echo PHP_VERSION;')
+          if [[ "$ACTUAL_PHP" != "$PHP_VERSION" ]]; then
+            echo "::error::Expected PHP $PHP_VERSION but image contains $ACTUAL_PHP"
+            exit 1
+          fi
+
+          CONTAINER=nextcloud-smoke
+          cleanup() { docker logs "$CONTAINER" 2>/dev/null || true; docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          docker run -d --name "$CONTAINER" -p 127.0.0.1:18080:80 "$IMAGE" >/dev/null
+
+          for attempt in $(seq 1 60); do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ || true)
+            if [[ "$CODE" =~ ^(200|301|302|303)$ ]]; then
+              echo "Nextcloud HTTP startup check passed (HTTP $CODE); app=$ACTUAL_VERSION PHP=$ACTUAL_PHP"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::Nextcloud did not return a healthy HTTP response; last status=$CODE"
+          docker logs "$CONTAINER" || true
+          exit 1
+
+      - name: Verify and smoke-test CryptPad startup
+        if: matrix.name == 'cryptpad' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true')
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          NODE_VERSION: ${{ env.NODE_VERSION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker pull "$IMAGE"
+
+          ACTUAL_NODE=$(docker run --rm --entrypoint node "$IMAGE" --version)
+          if [[ "$ACTUAL_NODE" != "v${NODE_VERSION}" ]]; then
+            echo "::error::Expected Node.js v${NODE_VERSION} but image contains $ACTUAL_NODE"
+            exit 1
+          fi
+
+          CONTAINER=cryptpad-smoke
+          cleanup() { docker logs "$CONTAINER" 2>/dev/null || true; docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          docker run -d --name "$CONTAINER" -p 127.0.0.1:18081:3000 "$IMAGE" >/dev/null
+
+          for attempt in $(seq 1 60); do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/ || true)
+            if [[ "$CODE" =~ ^(200|301|302|303)$ ]]; then
+              echo "CryptPad HTTP startup check passed (HTTP $CODE); Node.js=$ACTUAL_NODE"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::CryptPad did not return a healthy HTTP response; last status=$CODE"
+          docker logs "$CONTAINER" || true
+          exit 1
 
       - name: Sign image with Cosign
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
