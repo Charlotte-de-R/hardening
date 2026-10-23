@@ -107,7 +107,7 @@ case "$IMAGE_NAME" in
 esac
 
 # --------------------------------------------------
-# 3. Resolve a candidate application version
+# 3. Resolve the upstream application version
 # --------------------------------------------------
 LATEST_VER=""
 DESIRED_VER=""
@@ -149,8 +149,58 @@ if [[ -n "$REPO" ]]; then
     echo "WARNING: Could not fetch a release/tag from $REPO."
   fi
 
-  # Nextcloud: enforce a minimum allowed Docker tag.
-  if [[ "$IMAGE_NAME" == "nextcloud" ]]; then
+  # ------------------------------------------------
+  # CryptPad:
+  # Use a published Docker Hub version tag rather
+  # than assuming the latest GitHub release has
+  # already been published as a Docker image.
+  # ------------------------------------------------
+  if [[ "$IMAGE_NAME" == "cryptpad" ]]; then
+    echo "Resolving published CryptPad Docker versions..."
+
+    DOCKER_TAGS_JSON=$(
+      curl -fsSL \
+        --retry 2 \
+        --connect-timeout 10 \
+        "https://hub.docker.com/v2/repositories/cryptpad/cryptpad/tags?page_size=100&name=version-" \
+      2>/dev/null
+    ) || {
+      echo "ERROR: Could not retrieve CryptPad Docker Hub tags."
+      echo "Refusing to build with an unverified application version."
+      exit 1
+    }
+
+    if ! jq -e '.results | type == "array"' \
+      <<< "$DOCKER_TAGS_JSON" >/dev/null; then
+      echo "ERROR: Invalid response from Docker Hub tags API."
+      exit 1
+    fi
+
+    DOCKER_TAGS=$(
+      jq -r '
+        .results[]?.name
+        | select(test("^version-[0-9]+\\.[0-9]+\\.[0-9]+$"))
+        | sub("^version-"; "")
+      ' <<< "$DOCKER_TAGS_JSON" |
+        sort -Vu
+    )
+
+    DESIRED_VER=$(printf '%s\n' "$DOCKER_TAGS" | tail -n 1)
+
+    if [[ -z "$DESIRED_VER" ]]; then
+      echo "ERROR: No valid versioned CryptPad Docker tag was found."
+      echo "Refusing to build with an unverified application version."
+      exit 1
+    fi
+
+    echo "Latest GitHub release: ${LATEST_VER:-unknown}"
+    echo "Latest published CryptPad Docker version: $DESIRED_VER"
+
+  # ------------------------------------------------
+  # Nextcloud:
+  # Enforce a minimum allowed application version.
+  # ------------------------------------------------
+  elif [[ "$IMAGE_NAME" == "nextcloud" ]]; then
     NEXTCLOUD_MIN_VERSION="${NEXTCLOUD_MIN_VERSION:-34.0.4}"
     NEXTCLOUD_MIN_VERSION="${NEXTCLOUD_MIN_VERSION#v}"
 
@@ -170,16 +220,21 @@ if [[ -n "$REPO" ]]; then
     echo "Nextcloud upstream release: ${LATEST_VER:-unavailable}"
     echo "Nextcloud selected version: $DESIRED_VER"
 
+  # ------------------------------------------------
+  # Other monitored images:
+  # Use the latest upstream release/tag.
+  # ------------------------------------------------
   elif [[ -n "$LATEST_VER" ]]; then
     DESIRED_VER="$LATEST_VER"
 
   elif [[ -n "$CURRENT_VER" && "$CURRENT_VER" != "latest" ]]; then
-    # Do not change the application version when the API is unavailable.
     DESIRED_VER="$CURRENT_VER"
     echo "Falling back to current version: $DESIRED_VER"
   fi
 
-  # Reject application downgrades.
+  # ------------------------------------------------
+  # 3a. Reject application downgrades
+  # ------------------------------------------------
   if [[ -n "$CURRENT_VER" &&
         "$CURRENT_VER" != "latest" &&
         -n "$DESIRED_VER" ]] &&
@@ -192,7 +247,9 @@ if [[ -n "$REPO" ]]; then
     write_output "latest_version" "$DESIRED_VER"
   fi
 
-  # Tailscale is built from source using its existing build process.
+  # ------------------------------------------------
+  # 3b. Tailscale uses its existing source build flow
+  # ------------------------------------------------
   if [[ "$IMAGE_NAME" == "tailscale" &&
         -n "$DESIRED_VER" ]] &&
      { [[ "$MISSING_IMAGE" == true ]] ||
@@ -203,7 +260,10 @@ if [[ -n "$REPO" ]]; then
     exit 0
   fi
 
-  # Verify that the selected upstream Docker tag actually exists.
+  # ------------------------------------------------
+  # 3c. Verify that the selected upstream Docker tag
+  #     exists before building.
+  # ------------------------------------------------
   if [[ -n "$DESIRED_VER" ]] &&
      { [[ "$MISSING_IMAGE" == true ]] ||
        [[ -z "$CURRENT_VER" ]] ||
@@ -217,7 +277,6 @@ if [[ -n "$REPO" ]]; then
         BASE_IMAGE_REF="nextcloud:${DESIRED_VER}"
         ;;
       cryptpad)
-        # CryptPad Docker tags use the "version-" prefix.
         BASE_IMAGE_REF="cryptpad/cryptpad:version-${DESIRED_VER}"
         ;;
       *)
@@ -238,6 +297,9 @@ if [[ -n "$REPO" ]]; then
     exit 0
   fi
 
+  # ------------------------------------------------
+  # 3d. Report the resolved version
+  # ------------------------------------------------
   if [[ -n "$DESIRED_VER" && -n "$CURRENT_VER" ]]; then
     if [[ "$DESIRED_VER" == "$CURRENT_VER" ]]; then
       echo "Application version unchanged: $CURRENT_VER"
@@ -303,7 +365,6 @@ if [[ -n "$UPDATES" ]]; then
 else
   echo "Image OS is up-to-date."
 
-  # Do not override a required build when the image is missing.
   if [[ "$MISSING_IMAGE" == false ]]; then
     write_output "needs_update" "false"
   fi
