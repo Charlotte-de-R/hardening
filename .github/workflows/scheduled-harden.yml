@@ -154,6 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./check_update.sh
+
           if [[ -f ./update_dockerfiles.sh ]]; then
             chmod +x ./update_dockerfiles.sh
           fi
@@ -227,7 +228,6 @@ jobs:
           file: ${{ matrix.context }}/Dockerfile.hardened
           push: true
           tags: ${{ steps.image.outputs.image }}
-          build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: true
@@ -242,9 +242,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          ACTUAL_VERSION=$(docker pull "$IMAGE" >/dev/null 2>&1 && \
-            docker image inspect "$IMAGE" \
-              --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
+          docker pull "$IMAGE"
+
+          ACTUAL_VERSION=$(docker image inspect "$IMAGE" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
 
           if [[ -z "$ACTUAL_VERSION" || "$ACTUAL_VERSION" == "<no value>" ]]; then
             echo "::error::Nextcloud image has no org.opencontainers.image.version label"
@@ -276,6 +277,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           cosign verify "$IMAGE" \
             --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
@@ -283,7 +285,7 @@ jobs:
       - name: Run Trivy vulnerability scan
         id: trivy
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.image }}
           format: sarif
