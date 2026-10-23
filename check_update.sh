@@ -68,6 +68,15 @@ if [[ "$MISSING_IMAGE" == false ]]; then
   fi
 fi
 
+if [[ "$IMAGE_NAME" == "immich-server" || "$IMAGE_NAME" == "immich-machine-learning" ]]; then
+  case "$CURRENT_VER" in
+    release|latest)
+      echo "Floating Immich label '$CURRENT_VER' is not a comparable version; scheduling version migration."
+      CURRENT_VER=""
+      ;;
+  esac
+fi
+
 echo "Current image version: ${CURRENT_VER:-unknown}"
 
 # --------------------------------------------------
