@@ -38,11 +38,46 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  select-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Select build matrix
+        id: set-matrix
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET_IMAGE: ${{ inputs.target_image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" &&
+                "$TARGET_IMAGE" == "nextcloud" ]]; then
+            MATRIX='{"include":[{"name":"nextcloud","context":"./dockerfiles/nextcloud","image_tag":"nextcloud:hardened"}]}'
+          else
+            MATRIX='{"include":[
+              {"name":"tailscale","context":"./dockerfiles/tailscale","image_tag":"tailscale:hardened"},
+              {"name":"crowdsec","context":"./dockerfiles/crowdsec","image_tag":"crowdsec:hardened"},
+              {"name":"socket-proxy","context":"./dockerfiles/socket-proxy","image_tag":"socket-proxy:hardened"},
+              {"name":"promtail","context":"./dockerfiles/promtail","image_tag":"promtail:hardened"},
+              {"name":"immich-server","context":"./dockerfiles/immich-server","image_tag":"immich-server:hardened"},
+              {"name":"immich-machine-learning","context":"./dockerfiles/immich-machine-learning","image_tag":"immich-machine-learning:hardened"},
+              {"name":"immich-redis","context":"./dockerfiles/immich-redis","image_tag":"immich-redis:hardened"},
+              {"name":"immich-postgres","context":"./dockerfiles/immich-postgres","image_tag":"immich-postgres:hardened"},
+              {"name":"nextcloud","context":"./dockerfiles/nextcloud","image_tag":"nextcloud:hardened"},
+              {"name":"mariadb","context":"./dockerfiles/mariadb","image_tag":"mariadb:hardened"},
+              {"name":"vaultwarden","context":"./dockerfiles/vaultwarden","image_tag":"vaultwarden:hardened"},
+              {"name":"tetragon","context":"./dockerfiles/tetragon","image_tag":"tetragon:hardened"},
+              {"name":"portainer","context":"./dockerfiles/portainer","image_tag":"portainer:hardened"},
+              {"name":"cryptpad","context":"./dockerfiles/cryptpad","image_tag":"cryptpad:hardened"}
+            ]}'
+          fi
+
+          echo "matrix=$(jq -c . <<< "$MATRIX")" >> "$GITHUB_OUTPUT"
+
   build-and-harden:
-    if: >-
-      github.event_name != 'workflow_dispatch' ||
-      inputs.target_image == 'all' ||
-      matrix.name == inputs.target_image
+    needs: select-matrix
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -53,63 +88,30 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: 3
-      matrix:
-        include:
-          - name: tailscale
-            context: ./dockerfiles/tailscale
-            image_tag: tailscale:hardened
-          - name: crowdsec
-            context: ./dockerfiles/crowdsec
-            image_tag: crowdsec:hardened
-          - name: socket-proxy
-            context: ./dockerfiles/socket-proxy
-            image_tag: socket-proxy:hardened
-          - name: promtail
-            context: ./dockerfiles/promtail
-            image_tag: promtail:hardened
-          - name: immich-server
-            context: ./dockerfiles/immich-server
-            image_tag: immich-server:hardened
-          - name: immich-machine-learning
-            context: ./dockerfiles/immich-machine-learning
-            image_tag: immich-machine-learning:hardened
-          - name: immich-redis
-            context: ./dockerfiles/immich-redis
-            image_tag: immich-redis:hardened
-          - name: immich-postgres
-            context: ./dockerfiles/immich-postgres
-            image_tag: immich-postgres:hardened
-          - name: nextcloud
-            context: ./dockerfiles/nextcloud
-            image_tag: nextcloud:hardened
-          - name: mariadb
-            context: ./dockerfiles/mariadb
-            image_tag: mariadb:hardened
-          - name: vaultwarden
-            context: ./dockerfiles/vaultwarden
-            image_tag: vaultwarden:hardened
-          - name: tetragon
-            context: ./dockerfiles/tetragon
-            image_tag: tetragon:hardened
-          - name: portainer
-            context: ./dockerfiles/portainer
-            image_tag: portainer:hardened
-          - name: cryptpad
-            context: ./dockerfiles/cryptpad
-            image_tag: cryptpad:hardened
+      matrix: ${{ fromJSON(needs.select-matrix.outputs.matrix) }}
 
     steps:
       - name: Determine Cache Strategy
+        shell: bash
+        env:
+          FORCE_BUILD: ${{ inputs.force_build }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          if [ "${{ inputs.force_build }}" == "true" ]; then
-            echo "CACHE_KEY=${{ github.run_id }}" >> "$GITHUB_ENV"
+          set -euo pipefail
+          if [[ "$FORCE_BUILD" == "true" ]]; then
+            echo "CACHE_KEY=$RUN_ID" >> "$GITHUB_ENV"
           else
             echo "CACHE_KEY=$(date +%Y.%U)" >> "$GITHUB_ENV"
           fi
 
       - name: Set image full path
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_OWNER: ${{ env.IMAGE_OWNER }}
+          IMAGE_REPO: ${{ env.IMAGE_REPO }}
+          IMAGE_TAG: ${{ matrix.image_tag }}
         run: |
-          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> "$GITHUB_ENV"
+          echo "FULL_IMAGE_NAME=${REGISTRY}/${IMAGE_OWNER}/${IMAGE_REPO}/${IMAGE_TAG}" >> "$GITHUB_ENV"
 
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
@@ -146,12 +148,14 @@ jobs:
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
         env:
           LATEST_VERSION: ${{ steps.check.outputs.latest_version }}
+        shell: bash
         run: |
+          set -euo pipefail
           {
             echo 'DYNAMIC_BUILD_ARGS<<EOF'
             echo "CACHEBUST=${{ env.CACHE_KEY }}"
 
-            if [ -n "$LATEST_VERSION" ]; then
+            if [[ -n "$LATEST_VERSION" ]]; then
               echo "APP_VERSION=$LATEST_VERSION"
               echo "Selected APP_VERSION=$LATEST_VERSION"
             fi
@@ -181,24 +185,20 @@ jobs:
         if: matrix.name == 'nextcloud' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request')
         env:
           EXPECTED_VERSION: ${{ steps.check.outputs.latest_version }}
+          IMAGE_REF: ${{ env.FULL_IMAGE_NAME }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
         run: |
           set -euo pipefail
 
-          if [ -z "$EXPECTED_VERSION" ]; then
-            echo "❌ Expected Nextcloud version is empty."
+          if [[ -z "$EXPECTED_VERSION" ]]; then
+            echo "ERROR: Expected Nextcloud version is empty."
             exit 1
           fi
 
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            IMAGE_REF="$FULL_IMAGE_NAME"
-          else
-            IMAGE_REF="$FULL_IMAGE_NAME"
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            docker pull "$IMAGE_REF"
           fi
-
-          echo "Expected Nextcloud Docker tag: $EXPECTED_VERSION"
-          echo "Built image: $IMAGE_REF"
-
-          docker pull "$IMAGE_REF"
 
           ACTUAL_VERSION=$(
             docker image inspect \
@@ -206,54 +206,61 @@ jobs:
               "$IMAGE_REF"
           )
 
-          if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then
-            echo "❌ Version mismatch: expected $EXPECTED_VERSION, got $ACTUAL_VERSION"
+          echo "Expected version: $EXPECTED_VERSION"
+          echo "Actual image label: $ACTUAL_VERSION"
+
+          if [[ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]]; then
+            echo "ERROR: Version mismatch."
             exit 1
           fi
 
-          echo "✅ Nextcloud image label matches the selected version."
+          echo "Nextcloud image label verification passed."
 
       - name: Sign image (cosign)
         if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
         continue-on-error: true
         env:
           COSIGN_EXPERIMENTAL: "true"
+          IMAGE: ${{ env.FULL_IMAGE_NAME }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          IMAGE="${{ env.FULL_IMAGE_NAME }}"
-          DIGEST="${{ steps.build.outputs.digest }}"
-
-          if [ -z "$DIGEST" ]; then
-            echo "⚠️ Digest not found"
+          if [[ -z "$DIGEST" ]]; then
+            echo "WARNING: Image digest not found."
             exit 0
           fi
 
-          cosign sign --yes "$IMAGE@$DIGEST" || echo "⚠️ sign failed"
+          cosign sign --yes "$IMAGE@$DIGEST" || echo "WARNING: Image signing failed."
 
       - name: Verify signature
         if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
         continue-on-error: true
+        env:
+          IMAGE: ${{ env.FULL_IMAGE_NAME }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          IMAGE="${{ env.FULL_IMAGE_NAME }}"
-          DIGEST="${{ steps.build.outputs.digest }}"
+          if [[ -z "$DIGEST" ]]; then
+            echo "WARNING: Image digest not found."
+            exit 0
+          fi
 
-          cosign verify "$IMAGE@$DIGEST" || echo "⚠️ verify failed"
+          cosign verify "$IMAGE@$DIGEST" || echo "WARNING: Signature verification failed."
 
       - name: Trivy scan
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.FULL_IMAGE_NAME }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL'
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL
           ignore-unfixed: false
           exit-code: '0'
-          timeout: '15m'
-          scanners: 'vuln'
+          timeout: 15m
+          scanners: vuln
 
       - name: Upload Trivy SARIF results to GitHub Security
         if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request') && always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
-          category: 'trivy-${{ matrix.name }}'
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ matrix.name }}
