@@ -92,10 +92,10 @@ jobs:
 
     steps:
       - name: Determine Cache Strategy
-        shell: bash
         env:
           FORCE_BUILD: ${{ inputs.force_build }}
           RUN_ID: ${{ github.run_id }}
+        shell: bash
         run: |
           set -euo pipefail
           if [[ "$FORCE_BUILD" == "true" ]]; then
@@ -246,6 +246,7 @@ jobs:
           cosign verify "$IMAGE@$DIGEST" || echo "WARNING: Signature verification failed."
 
       - name: Trivy scan
+        id: trivy
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
         uses: aquasecurity/trivy-action@master
         with:
@@ -259,8 +260,8 @@ jobs:
           scanners: vuln
 
       - name: Upload Trivy SARIF results to GitHub Security
-        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request') && always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.name }}
