@@ -1,3 +1,4 @@
+
 name: Scheduled Build & Scan (Matrix Strategy)
 
 on:
@@ -12,6 +13,19 @@ on:
         required: false
         default: false
         type: boolean
+      target_image:
+        description: 'Build all images or only Nextcloud'
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - nextcloud
+      nextcloud_min_version:
+        description: 'Minimum allowed Nextcloud Docker tag (e.g. 34.0.4)'
+        required: true
+        default: '34.0.4'
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,6 +39,10 @@ env:
 
 jobs:
   build-and-harden:
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.target_image == 'all' ||
+      matrix.name == inputs.target_image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -84,13 +102,14 @@ jobs:
       - name: Determine Cache Strategy
         run: |
           if [ "${{ inputs.force_build }}" == "true" ]; then
-            echo "CACHE_KEY=${{ github.run_id }}" >> $GITHUB_ENV
+            echo "CACHE_KEY=${{ github.run_id }}" >> "$GITHUB_ENV"
           else
-            echo "CACHE_KEY=$(date +%Y.%U)" >> $GITHUB_ENV
+            echo "CACHE_KEY=$(date +%Y.%U)" >> "$GITHUB_ENV"
           fi
 
       - name: Set image full path
-        run: echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> $GITHUB_ENV
+        run: |
+          echo "FULL_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/${{ matrix.image_tag }}" >> "$GITHUB_ENV"
 
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
@@ -120,21 +139,23 @@ jobs:
         id: check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./check_update.sh ${{ env.FULL_IMAGE_NAME }}
+          NEXTCLOUD_MIN_VERSION: ${{ inputs.nextcloud_min_version || '34.0.4' }}
+        run: ./check_update.sh "${{ env.FULL_IMAGE_NAME }}"
 
       - name: Prepare Dynamic Build Args
         if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
+        env:
+          LATEST_VERSION: ${{ steps.check.outputs.latest_version }}
         run: |
-          if [ -n "${{ steps.check.outputs.latest_version }}" ]; then
-            echo "💡 最新バージョンをセットしました: ${{ steps.check.outputs.latest_version }}"
-          fi
-
           {
             echo 'DYNAMIC_BUILD_ARGS<<EOF'
             echo "CACHEBUST=${{ env.CACHE_KEY }}"
-            if [ -n "${{ steps.check.outputs.latest_version }}" ]; then
-              echo "APP_VERSION=${{ steps.check.outputs.latest_version }}"
+
+            if [ -n "$LATEST_VERSION" ]; then
+              echo "APP_VERSION=$LATEST_VERSION"
+              echo "Selected APP_VERSION=$LATEST_VERSION"
             fi
+
             echo 'EOF'
           } >> "$GITHUB_ENV"
 
@@ -155,6 +176,42 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: false
           sbom: false
+
+      - name: Verify built Nextcloud version
+        if: matrix.name == 'nextcloud' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request')
+        env:
+          EXPECTED_VERSION: ${{ steps.check.outputs.latest_version }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$EXPECTED_VERSION" ]; then
+            echo "❌ Expected Nextcloud version is empty."
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            IMAGE_REF="$FULL_IMAGE_NAME"
+          else
+            IMAGE_REF="$FULL_IMAGE_NAME"
+          fi
+
+          echo "Expected Nextcloud Docker tag: $EXPECTED_VERSION"
+          echo "Built image: $IMAGE_REF"
+
+          docker pull "$IMAGE_REF"
+
+          ACTUAL_VERSION=$(
+            docker image inspect \
+              --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
+              "$IMAGE_REF"
+          )
+
+          if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "❌ Version mismatch: expected $EXPECTED_VERSION, got $ACTUAL_VERSION"
+            exit 1
+          fi
+
+          echo "✅ Nextcloud image label matches the selected version."
 
       - name: Sign image (cosign)
         if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
