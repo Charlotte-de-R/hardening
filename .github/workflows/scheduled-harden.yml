@@ -1,20 +1,14 @@
 
-name: Scheduled Build & Scan (Matrix Strategy)
+name: Scheduled Hardened Builds
 
 on:
   schedule:
     - cron: '30 19 * * *'
-  pull_request:
-    branches: [ main, master ]
+
   workflow_dispatch:
     inputs:
-      force_build:
-        description: 'Force build even if no updates found'
-        required: false
-        default: false
-        type: boolean
       target_image:
-        description: 'Build all images or only Nextcloud'
+        description: 'Build all images or select one image'
         required: true
         default: all
         type: choice
@@ -34,27 +28,34 @@ on:
           - tetragon
           - portainer
           - cryptpad
+
       nextcloud_min_version:
-        description: 'Minimum allowed Nextcloud Docker tag (e.g. 34.0.4)'
-        required: true
+        description: 'Minimum allowed Nextcloud version'
+        required: false
         default: '34.0.4'
         type: string
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+      force_build:
+        description: 'Force build even if no update is detected'
+        required: false
+        default: false
+        type: boolean
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_OWNER: charlotte-de-r
-  IMAGE_REPO: hardening
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-harden-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   select-matrix:
+    name: Select build targets
     runs-on: ubuntu-latest
+
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+
     steps:
       - name: Select build matrix
         id: set-matrix
@@ -65,11 +66,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$EVENT_NAME" == "workflow_dispatch" &&
-                "$TARGET_IMAGE" == "nextcloud" ]]; then
-            MATRIX='{"include":[{"name":"nextcloud","context":"./dockerfiles/nextcloud","image_tag":"nextcloud:hardened"}]}'
-          else
-            MATRIX='{"include":[
+          ALL_MATRIX=$(cat <<'JSON'
+          {
+            "include": [
               {"name":"tailscale","context":"./dockerfiles/tailscale","image_tag":"tailscale:hardened"},
               {"name":"crowdsec","context":"./dockerfiles/crowdsec","image_tag":"crowdsec:hardened"},
               {"name":"socket-proxy","context":"./dockerfiles/socket-proxy","image_tag":"socket-proxy:hardened"},
@@ -84,14 +83,42 @@ jobs:
               {"name":"tetragon","context":"./dockerfiles/tetragon","image_tag":"tetragon:hardened"},
               {"name":"portainer","context":"./dockerfiles/portainer","image_tag":"portainer:hardened"},
               {"name":"cryptpad","context":"./dockerfiles/cryptpad","image_tag":"cryptpad:hardened"}
-            ]}'
+            ]
+          }
+          JSON
+          )
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            TARGET_IMAGE="${TARGET_IMAGE:-all}"
+
+            if [[ "$TARGET_IMAGE" == "all" ]]; then
+              MATRIX=$(jq -c . <<< "$ALL_MATRIX")
+            else
+              MATRIX=$(jq -c --arg target "$TARGET_IMAGE" \
+                '{include: [.include[] | select(.name == $target)]}' \
+                <<< "$ALL_MATRIX")
+            fi
+          else
+            MATRIX=$(jq -c . <<< "$ALL_MATRIX")
           fi
 
-          echo "matrix=$(jq -c . <<< "$MATRIX")" >> "$GITHUB_OUTPUT"
+          COUNT=$(jq '.include | length' <<< "$MATRIX")
+
+          if [[ "$COUNT" -eq 0 ]]; then
+            echo "::error::No build target found for target_image='${TARGET_IMAGE:-unset}'"
+            exit 1
+          fi
+
+          echo "Selected build targets:"
+          jq -r '.include[].name' <<< "$MATRIX"
+
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   build-and-harden:
+    name: Build ${{ matrix.name }}
     needs: select-matrix
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
@@ -103,176 +130,171 @@ jobs:
       max-parallel: 3
       matrix: ${{ fromJSON(needs.select-matrix.outputs.matrix) }}
 
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}/${{ matrix.name }}
+      NEXTCLOUD_MIN_VERSION: ${{ inputs.nextcloud_min_version || '34.0.4' }}
+      FORCE_BUILD: ${{ inputs.force_build || false }}
+
     steps:
-      - name: Determine Cache Strategy
-        env:
-          FORCE_BUILD: ${{ inputs.force_build }}
-          RUN_ID: ${{ github.run_id }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set image full path
+        id: image
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$FORCE_BUILD" == "true" ]]; then
-            echo "CACHE_KEY=$RUN_ID" >> "$GITHUB_ENV"
-          else
-            echo "CACHE_KEY=$(date +%Y.%U)" >> "$GITHUB_ENV"
-          fi
-
-      - name: Set image full path
-        env:
-          REGISTRY: ${{ env.REGISTRY }}
-          IMAGE_OWNER: ${{ env.IMAGE_OWNER }}
-          IMAGE_REPO: ${{ env.IMAGE_REPO }}
-          IMAGE_TAG: ${{ matrix.image_tag }}
-        run: |
-          echo "FULL_IMAGE_NAME=${REGISTRY}/${IMAGE_OWNER}/${IMAGE_REPO}/${IMAGE_TAG}" >> "$GITHUB_ENV"
-
-      - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+          echo "image=${REGISTRY}/${IMAGE_NAME}:hardened" >> "$GITHUB_OUTPUT"
+          echo "Image: ${REGISTRY}/${IMAGE_NAME}:hardened"
+          echo "Build target: ${{ matrix.name }}"
 
       - name: Make scripts executable
-        run: chmod +x update_dockerfiles.sh check_update.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./check_update.sh
+          if [[ -f ./update_dockerfiles.sh ]]; then
+            chmod +x ./update_dockerfiles.sh
+          fi
 
       - name: Inject Security Hardening Templates
-        env:
-          TARGET_CONTEXT: ${{ matrix.context }}
-        run: ./update_dockerfiles.sh "$TARGET_CONTEXT"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -f ./inject_hardening.sh ]]; then
+            chmod +x ./inject_hardening.sh
+            ./inject_hardening.sh "${{ matrix.name }}"
+          else
+            echo "No inject_hardening.sh found; skipping template injection."
+          fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.10.0
+        uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3.3.0
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v3
 
-      - name: Check Updates
-        id: check
+      - name: Check for updates
+        id: update
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEXTCLOUD_MIN_VERSION: ${{ inputs.nextcloud_min_version || '34.0.4' }}
-        run: ./check_update.sh "${{ env.FULL_IMAGE_NAME }}"
-
-      - name: Prepare Dynamic Build Args
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
-        env:
-          LATEST_VERSION: ${{ steps.check.outputs.latest_version }}
+          IMAGE: ${{ steps.image.outputs.image }}
+          TARGET_IMAGE: ${{ matrix.name }}
+          NEXTCLOUD_MIN_VERSION: ${{ env.NEXTCLOUD_MIN_VERSION }}
         shell: bash
         run: |
           set -euo pipefail
-          {
-            echo 'DYNAMIC_BUILD_ARGS<<EOF'
-            echo "CACHEBUST=${{ env.CACHE_KEY }}"
 
-            if [[ -n "$LATEST_VERSION" ]]; then
-              echo "APP_VERSION=$LATEST_VERSION"
-              echo "Selected APP_VERSION=$LATEST_VERSION"
-            fi
+          if [[ ! -f ./check_update.sh ]]; then
+            echo "::error::check_update.sh not found"
+            exit 1
+          fi
 
-            echo 'EOF'
-          } >> "$GITHUB_ENV"
+          ./check_update.sh "$IMAGE"
 
-      - name: Build and Push
+      - name: Prepare build arguments
+        id: build_args
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        env:
+          TARGET_IMAGE: ${{ matrix.name }}
+          NEXTCLOUD_MIN_VERSION: ${{ env.NEXTCLOUD_MIN_VERSION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_ARGS=""
+
+          if [[ "$TARGET_IMAGE" == "nextcloud" ]]; then
+            BUILD_ARGS="--build-arg NEXTCLOUD_MIN_VERSION=${NEXTCLOUD_MIN_VERSION}"
+          fi
+
+          echo "args=${BUILD_ARGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push hardened image
         id: build
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: ${{ env.FULL_IMAGE_NAME }}
-          build-args: ${{ env.DYNAMIC_BUILD_ARGS }}
-          secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          push: true
+          tags: ${{ steps.image.outputs.image }}
+          build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: false
-          sbom: false
+          provenance: true
+          sbom: true
 
       - name: Verify built Nextcloud version
-        if: matrix.name == 'nextcloud' && (steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request')
+        if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true')
         env:
-          EXPECTED_VERSION: ${{ steps.check.outputs.latest_version }}
-          IMAGE_REF: ${{ env.FULL_IMAGE_NAME }}
-          EVENT_NAME: ${{ github.event_name }}
+          IMAGE: ${{ steps.image.outputs.image }}
+          NEXTCLOUD_MIN_VERSION: ${{ env.NEXTCLOUD_MIN_VERSION }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ -z "$EXPECTED_VERSION" ]]; then
-            echo "ERROR: Expected Nextcloud version is empty."
+          ACTUAL_VERSION=$(docker pull "$IMAGE" >/dev/null 2>&1 && \
+            docker image inspect "$IMAGE" \
+              --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
+
+          if [[ -z "$ACTUAL_VERSION" || "$ACTUAL_VERSION" == "<no value>" ]]; then
+            echo "::error::Nextcloud image has no org.opencontainers.image.version label"
             exit 1
           fi
 
-          if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            docker pull "$IMAGE_REF"
-          fi
-
-          ACTUAL_VERSION=$(
-            docker image inspect \
-              --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
-              "$IMAGE_REF"
-          )
-
-          echo "Expected version: $EXPECTED_VERSION"
-          echo "Actual image label: $ACTUAL_VERSION"
-
-          if [[ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]]; then
-            echo "ERROR: Version mismatch."
+          if ! dpkg --compare-versions "$ACTUAL_VERSION" ge "$NEXTCLOUD_MIN_VERSION"; then
+            echo "::error::Built Nextcloud version $ACTUAL_VERSION is below minimum $NEXTCLOUD_MIN_VERSION"
             exit 1
           fi
 
-          echo "Nextcloud image label verification passed."
+          echo "Verified Nextcloud version: $ACTUAL_VERSION"
 
-      - name: Sign image (cosign)
-        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+      - name: Sign image with Cosign
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
         continue-on-error: true
         env:
-          COSIGN_EXPERIMENTAL: "true"
-          IMAGE: ${{ env.FULL_IMAGE_NAME }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
         run: |
-          if [[ -z "$DIGEST" ]]; then
-            echo "WARNING: Image digest not found."
-            exit 0
-          fi
+          set -euo pipefail
+          cosign sign --yes "$IMAGE"
 
-          cosign sign --yes "$IMAGE@$DIGEST" || echo "WARNING: Image signing failed."
-
-      - name: Verify signature
-        if: (steps.check.outputs.needs_update == 'true' || inputs.force_build == true) && github.event_name != 'pull_request'
+      - name: Verify image signature
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
         continue-on-error: true
         env:
-          IMAGE: ${{ env.FULL_IMAGE_NAME }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
         run: |
-          if [[ -z "$DIGEST" ]]; then
-            echo "WARNING: Image digest not found."
-            exit 0
-          fi
+          set -euo pipefail
+          cosign verify "$IMAGE" \
+            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 
-          cosign verify "$IMAGE@$DIGEST" || echo "WARNING: Signature verification failed."
-
-      - name: Trivy scan
+      - name: Run Trivy vulnerability scan
         id: trivy
-        if: steps.check.outputs.needs_update == 'true' || inputs.force_build == true || github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@master
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ env.FULL_IMAGE_NAME }}
+          image-ref: ${{ steps.image.outputs.image }}
           format: sarif
           output: trivy-results.sarif
-          severity: CRITICAL
-          ignore-unfixed: false
+          severity: CRITICAL,HIGH,MEDIUM,LOW
           exit-code: '0'
-          timeout: 15m
-          scanners: vuln
+          ignore-unfixed: false
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
 
-      - name: Upload Trivy SARIF results to GitHub Security
+      - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
