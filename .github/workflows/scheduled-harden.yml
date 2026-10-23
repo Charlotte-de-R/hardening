@@ -20,7 +20,20 @@ on:
         type: choice
         options:
           - all
+          - tailscale
+          - crowdsec
+          - socket-proxy
+          - promtail
+          - immich-server
+          - immich-machine-learning
+          - immich-redis
+          - immich-postgres
           - nextcloud
+          - mariadb
+          - vaultwarden
+          - tetragon
+          - portainer
+          - cryptpad
       nextcloud_min_version:
         description: 'Minimum allowed Nextcloud Docker tag (e.g. 34.0.4)'
         required: true
