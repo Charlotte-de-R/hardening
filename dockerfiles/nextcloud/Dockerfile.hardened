@@ -1,4 +1,4 @@
-ARG APP_VERSION="35.0.2"
+ARG APP_VERSION="latest"
 
 FROM nextcloud:${APP_VERSION}
 
