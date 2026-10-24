@@ -138,7 +138,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set image full path
         id: image
@@ -184,17 +184,17 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
 
       - name: Check for updates
         id: update
@@ -269,17 +269,35 @@ jobs:
       - name: Build and push hardened image
         id: build
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
-          push: true
+          push: false
+          load: true
           tags: ${{ steps.image.outputs.image }}
           build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: true
-          sbom: true
+          provenance: false
+          sbom: false
+
+
+
+
+      - name: Run Trivy vulnerability scan
+        id: trivy
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.image }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
 
       - name: Verify built Nextcloud version
         if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true')
@@ -289,8 +307,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          docker pull "$IMAGE"
 
           ACTUAL_VERSION=$(docker image inspect "$IMAGE" \
             --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
@@ -307,6 +323,22 @@ jobs:
 
           echo "Verified Nextcloud version: $ACTUAL_VERSION"
 
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure') && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v3.26.13
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ matrix.name }}
+
+      - name: Push image to registry
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE"
+
       - name: Sign image with Cosign
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
         continue-on-error: true
@@ -316,7 +348,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          cosign sign --yes "$IMAGE"
+          IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+          if [[ -z "$IMAGE_DIGEST" ]]; then
+            echo "::error::Could not extract image digest for $IMAGE"
+            exit 1
+          fi
+
+          echo "Signing digest: $IMAGE_DIGEST"
+          cosign sign --yes "$IMAGE_DIGEST"
 
       - name: Verify image signature
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
@@ -327,27 +366,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          cosign verify "$IMAGE" \
+          IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+
+          cosign verify "$IMAGE_DIGEST" \
             --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
-
-      - name: Run Trivy vulnerability scan
-        id: trivy
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ steps.image.outputs.image }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '0'
-          ignore-unfixed: false
-          vuln-type: os,library
-          scanners: vuln,misconfig,secret
-
-      - name: Upload Trivy SARIF to GitHub Security
-        if: always() && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy-${{ matrix.name }}
