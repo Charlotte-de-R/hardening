@@ -472,13 +472,13 @@ DOCKER_RUN_OUTPUT="
   " DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Whitespace-only output (exit 0)" "unknown-app" "false" "Image OS is up-to-date"
 
 # C. Alpine style updates (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Alpine style updates (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Alpine style updates (exit 0)" "unknown-app" "true" "OS updates detected"
 
 # D. Debian Inst lines (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="Inst bash [5.0-6ubuntu1.1] (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Inst lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="Inst bash [5.0-6ubuntu1.1] (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Inst lines (exit 0)" "unknown-app" "true" "OS updates detected"
 
 # E. Debian Conf lines (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="Conf bash (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Conf lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="Conf bash (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Conf lines (exit 0)" "unknown-app" "true" "OS updates detected"
 
 # F. executable file not found in stderr (exit non-zero) -> skipped, needs_update=false
 DOCKER_RUN_STDERR="docker: Error response from daemon: OCI runtime create failed: container_linux.go:349: starting container process caused \"exec: \\\"sh\\\": executable file not found in \$PATH\": unknown." DOCKER_RUN_EXIT_CODE=127 run_os_check_test "executable file not found in stderr" "unknown-app" "false" "Image has no shell"
@@ -490,12 +490,12 @@ WARNING: Ignoring APKINDEX.d4f...: No such file or directory" DOCKER_RUN_EXIT_CO
 # H. Mixed filtered strings and valid updates -> needs_update=true
 DOCKER_RUN_OUTPUT="fetch http://dl-cdn.alpinelinux.org/alpine/v3.18/main/x86_64/APKINDEX.tar.gz
 WARNING: Ignoring APKINDEX.d4f...: No such file or directory
-libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Mixed filtered strings and valid updates" "unknown-app" "true" "OS Updates detected"
+libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Mixed filtered strings and valid updates" "unknown-app" "true" "OS updates detected"
 
 # I. Non-zero exit code with unknown error (characterization test)
 # Known limitation: check_update.sh doesn't strictly check the docker run exit code unless it matches "executable file not found".
 # Any other error output that contains alphanumeric characters might incorrectly trigger "needs_update=true".
-DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with unknown error" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with unknown error" "unknown-app" "true" "OS updates detected"
 
 # J. Non-zero exit code with empty output (characterization test)
 # Known limitation: Empty output with non-zero exit code still results in needs_update=false.
