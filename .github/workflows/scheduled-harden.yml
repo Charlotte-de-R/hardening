@@ -138,7 +138,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set image full path
         id: image
@@ -184,17 +184,17 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
 
       - name: Check for updates
         id: update
@@ -266,10 +266,10 @@ jobs:
             echo "BUILD_ARGS_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build hardened image locally for scanning
+      - name: Build and push hardened image
         id: build
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
@@ -281,6 +281,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: false
           sbom: false
+
+
+
 
       - name: Run Trivy vulnerability scan
         id: trivy
@@ -305,9 +308,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Remove docker pull as the image is already loaded locally
-          # docker pull "$IMAGE"
-
           ACTUAL_VERSION=$(docker image inspect "$IMAGE" \
             --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
 
@@ -325,7 +325,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure') && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v3.26.13
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.name }}
