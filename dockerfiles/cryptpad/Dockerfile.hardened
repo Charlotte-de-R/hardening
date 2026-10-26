@@ -1,5 +1,5 @@
 ARG APP_VERSION=2026.5.1
-FROM node:24-alpine AS node-runtime
+FROM node:24-bookworm-slim AS node-runtime
 
 FROM cryptpad/cryptpad:version-${APP_VERSION}
 
