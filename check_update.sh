@@ -55,6 +55,7 @@ else
 fi
 
 CURRENT_VER=""
+CURRENT_DOCKER_CLI_VER=""
 
 if [[ "$MISSING_IMAGE" == false ]]; then
   CURRENT_VER=$(
@@ -66,6 +67,8 @@ if [[ "$MISSING_IMAGE" == false ]]; then
   if [[ "$CURRENT_VER" == "<no value>" || "$CURRENT_VER" == "null" ]]; then
     CURRENT_VER=""
   fi
+  CURRENT_DOCKER_CLI_VER=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.docker-cli-version" }}' "$IMAGE" 2>/dev/null || true)
+  [[ "$CURRENT_DOCKER_CLI_VER" == "<no value>" || "$CURRENT_DOCKER_CLI_VER" == "null" ]] && CURRENT_DOCKER_CLI_VER=""
 fi
 
 if [[ "$IMAGE_NAME" == "immich-server" || "$IMAGE_NAME" == "immich-machine-learning" ]]; then
@@ -138,6 +141,18 @@ if [[ "$IMAGE_NAME" == "mariadb" ]]; then
     exit 0
   fi
 elif [[ -n "$REPO" ]]; then
+  if [[ "$IMAGE_NAME" == "portainer" ]]; then
+    echo "Resolving latest Docker CLI static binary version..."
+    DOCKER_INDEX=$(curl -fsSL --retry 2 --connect-timeout 10 "https://download.docker.com/linux/static/stable/x86_64/") || { echo "ERROR: Cannot retrieve Docker CLI release index"; exit 1; }
+    DOCKER_CLI_VER=$(grep -oE 'docker-[0-9]+\.[0-9]+\.[0-9]+\.tgz' <<< "$DOCKER_INDEX" | sed -E 's/^docker-//; s/\.tgz$//' | sort -Vu | tail -n 1)
+    if [[ ! "$DOCKER_CLI_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "ERROR: Could not resolve valid Docker CLI version"; exit 1; fi
+    write_output "docker_cli_version" "$DOCKER_CLI_VER"
+    echo "Resolved Docker CLI version: $DOCKER_CLI_VER"
+    if [[ "$MISSING_IMAGE" == true || -z "$CURRENT_DOCKER_CLI_VER" || "$CURRENT_DOCKER_CLI_VER" != "$DOCKER_CLI_VER" ]]; then
+      write_output "needs_update" "true"
+    fi
+  fi
+
   echo "Fetching latest release for $REPO..."
 
   CURL_OPTS=(
