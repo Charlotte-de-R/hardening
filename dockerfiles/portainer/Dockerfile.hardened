@@ -41,7 +41,7 @@ RUN mkdir -p /tmp/patch && cd /tmp/patch && \
       cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
     done
 
-ARG DOCKER_CLI_VERSION="29.7.2"
+ARG DOCKER_CLI_VERSION="29.9.2"
 RUN curl -fsSLO "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" && \
     tar -xzf "docker-${DOCKER_CLI_VERSION}.tgz" && \
     mkdir -p /app/bin && \
