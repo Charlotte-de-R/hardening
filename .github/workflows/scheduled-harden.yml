@@ -363,6 +363,7 @@ jobs:
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.1
           image-ref: ${{ steps.image.outputs.image }}
           format: sarif
           output: trivy-results.sarif
