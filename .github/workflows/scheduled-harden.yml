@@ -244,6 +244,12 @@ jobs:
               exit 1
             fi
             BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
+          elif [[ "$TARGET_IMAGE" == "mariadb" ]]; then
+            if [[ -z "$UPDATE_VERSION" || ! "$UPDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Invalid or missing MariaDB APP_VERSION: $UPDATE_VERSION"
+              exit 1
+            fi
+            BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
           elif [[ "$TARGET_IMAGE" == "crowdsec" ]]; then
             if [[ -z "$UPDATE_VERSION" ]]; then
               echo "::error::CrowdSec APP_VERSION was not resolved by check_update.sh"
