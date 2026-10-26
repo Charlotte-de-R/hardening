@@ -56,6 +56,7 @@ fi
 
 CURRENT_VER=""
 CURRENT_DOCKER_CLI_VER=""
+DOCKER_CLI_UPDATE=false
 
 if [[ "$MISSING_IMAGE" == false ]]; then
   CURRENT_VER=$(
@@ -149,7 +150,7 @@ elif [[ -n "$REPO" ]]; then
     write_output "docker_cli_version" "$DOCKER_CLI_VER"
     echo "Resolved Docker CLI version: $DOCKER_CLI_VER"
     if [[ "$MISSING_IMAGE" == true || -z "$CURRENT_DOCKER_CLI_VER" || "$CURRENT_DOCKER_CLI_VER" != "$DOCKER_CLI_VER" ]]; then
-      write_output "needs_update" "true"
+      DOCKER_CLI_UPDATE=true
     fi
   fi
 
@@ -415,6 +416,10 @@ else
   echo "Image OS is up-to-date."
 
   if [[ "$MISSING_IMAGE" == false ]]; then
-    write_output "needs_update" "false"
+    if [[ "$DOCKER_CLI_UPDATE" == true ]]; then
+      write_output "needs_update" "true"
+    else
+      write_output "needs_update" "false"
+    fi
   fi
 fi
