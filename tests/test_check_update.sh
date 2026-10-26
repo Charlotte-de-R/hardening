@@ -33,11 +33,27 @@ fi
 exit 0
 EOF
 
-# Create curl stub that logs invoked arguments and outputs a dummy GitHub release JSON
-cat <<EOF > "$STUB_DIR/curl"
+# Create curl stub that returns endpoint-appropriate fixtures.
+cat <<'EOF' > "$STUB_DIR/curl"
 #!/bin/bash
-echo "\$@" >> "$CURL_LOG"
-echo '{"tag_name": "v1.0.0"}'
+echo "$@" >> "$CURL_LOG"
+case "$*" in
+  *download.docker.com/linux/static/stable/x86_64/*)
+    printf '%s\n' '<a href="docker-28.0.0.tgz">docker-28.0.0.tgz</a>' '<a href="docker-27.5.1.tgz">docker-27.5.1.tgz</a>'
+    ;;
+  *hub.docker.com/v2/repositories/cryptpad/cryptpad/tags*)
+    echo '{"results":[{"name":"version-2026.10.0"},{"name":"version-2026.9.0"}]}'
+    ;;
+  *hub.docker.com/v2/repositories/library/mariadb/tags*)
+    echo '{"results":[{"name":"12.0.1"},{"name":"12.1.0"}]}'
+    ;;
+  *api.github.com/repos/*)
+    echo '{"tag_name": "v1.0.0"}'
+    ;;
+  *)
+    echo '{}'
+    ;;
+esac
 exit 0
 EOF
 
@@ -149,7 +165,7 @@ run_mapping_test() {
       return
     fi
 
-    if ! grep -q "is not monitored via API. Falling back to OS package check." "$output_file"; then
+    if ! grep -q "is not monitored via the GitHub API." "$output_file"; then
       echo "FAILED (Fallback message not found in output)"
       cat "$output_file"
       FAILED=1
@@ -192,10 +208,10 @@ run_mapping_test "tetragon mapping" "cilium/tetragon" "cilium/tetragon" "v1.0.0"
 run_mapping_test "portainer mapping" "portainer" "portainer/portainer" "1.0.0"
 
 # 8. cryptpad (STRIP_V=false)
-run_mapping_test "cryptpad mapping" "cryptpad" "cryptpad/cryptpad" "v1.0.0"
+run_mapping_test "cryptpad published Docker version" "cryptpad" "cryptpad/cryptpad" "2026.10.0"
 
 # 9. nextcloud (STRIP_V=true)
-run_mapping_test "nextcloud mapping" "nextcloud" "nextcloud/server" "1.0.0"
+run_mapping_test "nextcloud minimum version" "nextcloud" "nextcloud/server" "34.0.4"
 
 # 10. Unmonitored image fallback (unknown-app)
 run_mapping_test "unknown-app unmonitored fallback" "unknown-app" "" ""
@@ -220,6 +236,10 @@ run_docker_pull_failure_test() {
   local output_file
   output_file=$(mktemp)
   local actual_code=0
+  local expected_code=0
+  if [ "$image_arg" = "unknown-app" ]; then
+    expected_code=1
+  fi
 
   # Override DOCKER_PULL_EXIT_CODE only for this execution
   set +e
@@ -227,16 +247,36 @@ run_docker_pull_failure_test() {
   actual_code=$?
   set -e
 
-  if [ "$actual_code" -ne 0 ]; then
-    echo "FAILED (Expected exit code 0, got $actual_code)"
+  if [ "$actual_code" -ne "$expected_code" ]; then
+    echo "FAILED (Expected exit code $expected_code, got $actual_code)"
     cat "$output_file"
     FAILED=1
     rm -f "$output_file"
     return
   fi
 
-  if ! grep -q "Image does not exist remotely. Triggering build." "$output_file"; then
-    echo "FAILED (Expected missing image message not found in output)"
+  if [ "$image_arg" = "unknown-app" ]; then
+    if ! grep -q "Cannot verify an upstream version for missing image unknown-app" "$output_file"; then
+      echo "FAILED (Fail-closed message not found)"
+      cat "$output_file"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+    if [ -s "$CURL_LOG" ]; then
+      echo "FAILED (curl was called for an unregistered missing image)"
+      cat "$CURL_LOG"
+      FAILED=1
+      rm -f "$output_file"
+      return
+    fi
+    echo "PASSED"
+    rm -f "$output_file"
+    return
+  fi
+
+  if ! grep -q "A build may be required." "$output_file"; then
+    echo "FAILED (Expected missing image warning not found in output)"
     cat "$output_file"
     FAILED=1
     rm -f "$output_file"
@@ -341,7 +381,7 @@ EOF
     return
   fi
 
-  if ! grep -q "Image does not exist remotely. Triggering build." "$output_file"; then
+  if ! grep -q "A build may be required." "$output_file"; then
     echo "FAILED (Expected missing image message not found in output)"
     cat "$output_file"
     FAILED=1
@@ -472,13 +512,13 @@ DOCKER_RUN_OUTPUT="
   " DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Whitespace-only output (exit 0)" "unknown-app" "false" "Image OS is up-to-date"
 
 # C. Alpine style updates (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Alpine style updates (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Alpine style updates (exit 0)" "unknown-app" "true" "OS updates detected"
 
 # D. Debian Inst lines (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="Inst bash [5.0-6ubuntu1.1] (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Inst lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="Inst bash [5.0-6ubuntu1.1] (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Inst lines (exit 0)" "unknown-app" "true" "OS updates detected"
 
 # E. Debian Conf lines (exit 0) -> needs_update=true
-DOCKER_RUN_OUTPUT="Conf bash (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Conf lines (exit 0)" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_OUTPUT="Conf bash (5.0-6ubuntu1.2 Ubuntu:20.04/focal-updates [amd64])" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Debian Conf lines (exit 0)" "unknown-app" "true" "OS updates detected"
 
 # F. executable file not found in stderr (exit non-zero) -> skipped, needs_update=false
 DOCKER_RUN_STDERR="docker: Error response from daemon: OCI runtime create failed: container_linux.go:349: starting container process caused \"exec: \\\"sh\\\": executable file not found in \$PATH\": unknown." DOCKER_RUN_EXIT_CODE=127 run_os_check_test "executable file not found in stderr" "unknown-app" "false" "Image has no shell"
@@ -490,12 +530,12 @@ WARNING: Ignoring APKINDEX.d4f...: No such file or directory" DOCKER_RUN_EXIT_CO
 # H. Mixed filtered strings and valid updates -> needs_update=true
 DOCKER_RUN_OUTPUT="fetch http://dl-cdn.alpinelinux.org/alpine/v3.18/main/x86_64/APKINDEX.tar.gz
 WARNING: Ignoring APKINDEX.d4f...: No such file or directory
-libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Mixed filtered strings and valid updates" "unknown-app" "true" "OS Updates detected"
+libssl3-3.1.4-r0" DOCKER_RUN_EXIT_CODE=0 run_os_check_test "Mixed filtered strings and valid updates" "unknown-app" "true" "OS updates detected"
 
 # I. Non-zero exit code with unknown error (characterization test)
 # Known limitation: check_update.sh doesn't strictly check the docker run exit code unless it matches "executable file not found".
 # Any other error output that contains alphanumeric characters might incorrectly trigger "needs_update=true".
-DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with unknown error" "unknown-app" "true" "OS Updates detected"
+DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with unknown error" "unknown-app" "true" "OS updates detected"
 
 # J. Non-zero exit code with empty output (characterization test)
 # Known limitation: Empty output with non-zero exit code still results in needs_update=false.
