@@ -1,4 +1,4 @@
-ARG APP_VERSION="v1.7.6"
+ARG APP_VERSION="v1.8.1"
 
 # Stage 1: Builder (最新Goコンパイラでバイナリを再ビルド)
 FROM golang:alpine AS builder
