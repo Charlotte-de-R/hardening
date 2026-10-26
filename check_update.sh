@@ -273,6 +273,13 @@ elif [[ -n "$REPO" ]]; then
     echo "Falling back to current version: $DESIRED_VER"
   fi
 
+  # A missing published image must never be built with an unverified version.
+  if [[ "$MISSING_IMAGE" == true && -z "$DESIRED_VER" ]]; then
+    echo "ERROR: Cannot resolve an upstream application version for missing image $IMAGE."
+    echo "Refusing to build an image without a verified application version."
+    exit 1
+  fi
+
   # ------------------------------------------------
   # 3a. Reject application downgrades
   # ------------------------------------------------
