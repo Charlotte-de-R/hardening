@@ -373,16 +373,16 @@ echo '{"tag_name": "v1.0.0"}'
 exit 0
 EOF
 
-  if [ "$actual_code" -ne 0 ]; then
-    echo "FAILED (Expected exit code 0, got $actual_code)"
+  if [ "$actual_code" -ne 1 ]; then
+    echo "FAILED (Expected fail-closed exit code 1, got $actual_code)"
     cat "$output_file"
     FAILED=1
     rm -f "$output_file"
     return
   fi
 
-  if ! grep -q "A build may be required." "$output_file"; then
-    echo "FAILED (Expected missing image message not found in output)"
+  if ! grep -q "Cannot resolve an upstream application version for missing image vaultwarden" "$output_file"; then
+    echo "FAILED (Expected fail-closed version-resolution error not found)"
     cat "$output_file"
     FAILED=1
     rm -f "$output_file"
@@ -405,9 +405,9 @@ EOF
     return
   fi
 
-  # Check that docker run was not called
+  # Fail closed: do not continue into OS checks after upstream version resolution fails.
   if grep -q "^run " "$DOCKER_LOG"; then
-    echo "FAILED (docker run was incorrectly called)"
+    echo "FAILED (docker run was incorrectly called after version resolution failed)"
     cat "$DOCKER_LOG"
     FAILED=1
     rm -f "$output_file"
