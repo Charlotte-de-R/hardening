@@ -41,7 +41,7 @@ RUN mkdir -p /tmp/patch && cd /tmp/patch && \
       cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
     done
 
-ARG DOCKER_CLI_VERSION="29.9.2"
+ARG DOCKER_CLI_VERSION
 RUN curl -fsSLO "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" && \
     tar -xzf "docker-${DOCKER_CLI_VERSION}.tgz" && \
     mkdir -p /app/bin && \
@@ -52,8 +52,10 @@ FROM portainer/portainer-ce:${APP_VERSION}
 
 ARG APP_VERSION
 ARG TARGETARCH=amd64
+ARG DOCKER_CLI_VERSION
 
 LABEL org.opencontainers.image.version="${APP_VERSION}"
+LABEL org.opencontainers.image.docker-cli-version="${DOCKER_CLI_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
 LABEL org.opencontainers.image.description="Portainer CE (hardened build)"
 
