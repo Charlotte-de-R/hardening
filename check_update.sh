@@ -113,6 +113,9 @@ case "$IMAGE_NAME" in
     REPO="nextcloud/server"
     STRIP_V=true
     ;;
+  mariadb)
+    # Resolve a published Docker Hub tag dynamically; retain the current major line.
+    ;;
 esac
 
 # --------------------------------------------------
@@ -121,7 +124,20 @@ esac
 LATEST_VER=""
 DESIRED_VER=""
 
-if [[ -n "$REPO" ]]; then
+if [[ "$IMAGE_NAME" == "mariadb" ]]; then
+  echo "Resolving latest MariaDB tag within the current major version..."
+  CURRENT_MAJOR="${CURRENT_VER%%.*}"
+  if [[ ! "$CURRENT_MAJOR" =~ ^[0-9]+$ ]]; then CURRENT_MAJOR="12"; fi
+  TAGS_JSON=$(curl -fsSL --retry 2 --connect-timeout 10 "https://hub.docker.com/v2/repositories/library/mariadb/tags?page_size=100&name=${CURRENT_MAJOR}.") || { echo "ERROR: Cannot retrieve MariaDB tags"; exit 1; }
+  DESIRED_VER=$(jq -r '.results[]?.name | select(test("^'"$CURRENT_MAJOR"'\\.[0-9]+\\.[0-9]+$"))' <<< "$TAGS_JSON" | sort -Vu | tail -n 1)
+  if [[ -z "$DESIRED_VER" ]]; then echo "ERROR: No compatible MariaDB tag found for major $CURRENT_MAJOR"; exit 1; fi
+  write_output "latest_version" "$DESIRED_VER"
+  if [[ "$MISSING_IMAGE" == true || -z "$CURRENT_VER" || "$DESIRED_VER" != "$CURRENT_VER" ]]; then
+    echo "MariaDB update candidate: ${CURRENT_VER:-unknown} -> $DESIRED_VER (major line $CURRENT_MAJOR only)"
+    write_output "needs_update" "true"
+    exit 0
+  fi
+elif [[ -n "$REPO" ]]; then
   echo "Fetching latest release for $REPO..."
 
   CURL_OPTS=(
