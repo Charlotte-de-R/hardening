@@ -185,6 +185,17 @@ run_test "Hyphen argument --help" 1 "Invalid image name" "--help"
 run_test "Hyphen argument -invalid" 1 "Invalid image name" "-invalid"
 run_test "Valid image name" 0 "Checking updates for: ghcr.io/example/owner/repo/image:tag" "ghcr.io/example/owner/repo/image:tag"
 
+run_test "Invalid reference format - space prefix" 1 "Invalid image reference format ' -v /tmp:/tmp alpine'" " -v /tmp:/tmp alpine"
+run_test "Invalid reference format - option injection" 1 "Invalid image name '--entrypoint=bash'" "--entrypoint=bash"
+run_test "Invalid reference format - command separator" 1 "Invalid image reference format 'alpine;echo'" "alpine;echo"
+run_test "Invalid reference format - shell interpolation" 1 "Invalid image reference format 'alpine\$(echo hacked)'" 'alpine$(echo hacked)'
+run_test "Invalid reference format - newline" 1 "Invalid image reference format" "alpine"$'\n'"echo"
+run_test "Invalid reference format - shell background" 1 "Invalid image reference format 'alpine & echo'" "alpine & echo"
+run_test "Invalid reference format - hyphen prefix bypass" 1 "Invalid image name '-alpine'" "-alpine"
+run_test "Valid reference format - standard" 0 "Checking updates for: ubuntu" "ubuntu"
+run_test "Valid reference format - digest" 0 "Checking updates for: alpine@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" "alpine@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+run_test "Valid reference format - custom port" 0 "Checking updates for: localhost:5000/my-image:latest" "localhost:5000/my-image:latest"
+
 # --- Repository mapping tests ---
 # 1. tailscale (STRIP_V=false)
 run_mapping_test "tailscale mapping" "tailscale" "tailscale/tailscale" "v1.0.0"

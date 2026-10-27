@@ -14,6 +14,29 @@ if [[ "$1" == -* ]]; then
   exit 1
 fi
 
+validate_docker_image() {
+  local image="$1"
+  if [[ -z "$image" ]]; then
+    return 1
+  fi
+  local COMPONENT_REGEX="[a-zA-Z0-9]+([_.-]+[a-zA-Z0-9]+)*"
+  local DOMAIN_REGEX="(${COMPONENT_REGEX}(:[0-9]+)?/)?"
+  local REPO_REGEX="${COMPONENT_REGEX}(/${COMPONENT_REGEX})*"
+  local TAG_REGEX="(:[a-zA-Z0-9_.-]{1,128})?"
+  local DIGEST_REGEX="(@[a-zA-Z0-9]+:[a-fA-F0-9]{32,})?"
+  local FULL_REGEX="^${DOMAIN_REGEX}${REPO_REGEX}${TAG_REGEX}${DIGEST_REGEX}$"
+  if [[ "$image" =~ $FULL_REGEX ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+if ! validate_docker_image "$1"; then
+  echo "ERROR: Invalid image reference format '$1'."
+  exit 1
+fi
+
 IMAGE="$1"
 IMAGE_NAME="${IMAGE##*/}"
 IMAGE_NAME="${IMAGE_NAME%%:*}"
@@ -394,7 +417,7 @@ fi
 '
 
 OUTPUT=$(
-  docker run --rm --user 0:0 --entrypoint sh "$IMAGE" \
+  docker run --rm --user 0:0 --entrypoint sh -- "$IMAGE" \
     -c "$CHECK_CMD" 2>&1 || true
 )
 
