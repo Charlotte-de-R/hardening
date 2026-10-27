@@ -83,6 +83,80 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Check for updates to resolve versions
+        id: update
+        env:
+          TARGET_IMAGE: ${{ matrix.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f ./check_update.sh ]]; then
+            echo "::error::check_update.sh not found"
+            exit 1
+          fi
+
+          ./check_update.sh "ghcr.io/dummy/$TARGET_IMAGE:hardened" || true
+
+      - name: Prepare build arguments
+        id: build_args
+        env:
+          TARGET_IMAGE: ${{ matrix.name }}
+          UPDATE_VERSION: ${{ steps.update.outputs.latest_version }}
+          DOCKER_CLI_VERSION: ${{ steps.update.outputs.docker_cli_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_ARGS=""
+
+          if [[ "$TARGET_IMAGE" == "nextcloud" ]]; then
+            if [[ -z "$UPDATE_VERSION" ]]; then
+              echo "::error::APP_VERSION was not resolved by check_update.sh for Nextcloud"
+              exit 1
+            fi
+            BUILD_ARGS="NEXTCLOUD_MIN_VERSION=${NEXTCLOUD_MIN_VERSION:-34.0.4}"
+          elif [[ "$TARGET_IMAGE" == "immich-server" || "$TARGET_IMAGE" == "immich-machine-learning" || "$TARGET_IMAGE" == "tetragon" ]]; then
+            if [[ -z "$UPDATE_VERSION" ]]; then
+              echo "::error::APP_VERSION was not resolved by check_update.sh for $TARGET_IMAGE"
+              exit 1
+            fi
+            BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
+          elif [[ "$TARGET_IMAGE" == "portainer" ]]; then
+            if [[ -z "$DOCKER_CLI_VERSION" ]]; then
+              echo "::error::Invalid or missing Docker CLI version"
+              exit 1
+            fi
+            if [[ -z "$UPDATE_VERSION" ]]; then
+              echo "::error::Invalid or missing Portainer APP_VERSION"
+              exit 1
+            fi
+            BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"$'\n'"DOCKER_CLI_VERSION=${DOCKER_CLI_VERSION}"
+          elif [[ "$TARGET_IMAGE" == "mariadb" ]]; then
+            if [[ -z "$UPDATE_VERSION" ]]; then
+              echo "::error::Invalid or missing MariaDB APP_VERSION: $UPDATE_VERSION"
+              exit 1
+            fi
+            BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
+          elif [[ "$TARGET_IMAGE" == "crowdsec" ]]; then
+            if [[ -z "$UPDATE_VERSION" ]]; then
+              echo "::error::CrowdSec APP_VERSION was not resolved by check_update.sh"
+              exit 1
+            fi
+            BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
+          elif [[ "$TARGET_IMAGE" == "cryptpad" ]]; then
+            if [[ -z "$UPDATE_VERSION" ]]; then
+              echo "::error::CryptPad APP_VERSION was not resolved by check_update.sh"
+              exit 1
+            fi
+            BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
+          fi
+
+          {
+            echo "args<<BUILD_ARGS_EOF"
+            echo "$BUILD_ARGS"
+            echo "BUILD_ARGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build hardened image without publishing
         uses: docker/build-push-action@v6
         with:
@@ -90,6 +164,7 @@ jobs:
           file: ${{ matrix.context }}/Dockerfile.hardened
           push: false
           tags: pr-validation/${{ matrix.name }}:${{ github.sha }}
+          build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=pr-${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=pr-${{ matrix.name }}
           provenance: false
