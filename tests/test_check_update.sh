@@ -90,7 +90,7 @@ run_test() {
     return
   fi
 
-  if ! grep -q "$expected_output_pattern" "$output_file"; then
+  if ! grep -Fq "$expected_output_pattern" "$output_file"; then
     echo "FAILED (Output did not contain pattern '$expected_output_pattern')"
     cat "$output_file"
     FAILED=1
@@ -195,6 +195,10 @@ run_test "Invalid reference format - hyphen prefix bypass" 1 "Invalid image name
 run_test "Valid reference format - standard" 0 "Checking updates for: ubuntu" "ubuntu"
 run_test "Valid reference format - digest" 0 "Checking updates for: alpine@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" "alpine@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 run_test "Valid reference format - custom port" 0 "Checking updates for: localhost:5000/my-image:latest" "localhost:5000/my-image:latest"
+run_test "Valid reference format - IPv6" 0 "Checking updates for: [2001:db8::1]:5000/my-repo:tag" "[2001:db8::1]:5000/my-repo:tag"
+run_test "Invalid reference format - uppercase repo" 1 "Invalid image reference format 'FOO/bar'" "FOO/bar"
+run_test "Invalid reference format - consecutive separators" 1 "Invalid image reference format 'foo..bar'" "foo..bar"
+run_test "Invalid reference format - mixed separators" 1 "Invalid image reference format 'foo.-bar'" "foo.-bar"
 
 # --- Repository mapping tests ---
 # 1. tailscale (STRIP_V=false)

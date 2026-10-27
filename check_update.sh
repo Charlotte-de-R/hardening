@@ -19,12 +19,13 @@ validate_docker_image() {
   if [[ -z "$image" ]]; then
     return 1
   fi
-  local COMPONENT_REGEX="[a-zA-Z0-9]+([_.-]+[a-zA-Z0-9]+)*"
-  local DOMAIN_REGEX="(${COMPONENT_REGEX}(:[0-9]+)?/)?"
-  local REPO_REGEX="${COMPONENT_REGEX}(/${COMPONENT_REGEX})*"
-  local TAG_REGEX="(:[a-zA-Z0-9_.-]{1,128})?"
-  local DIGEST_REGEX="(@[a-zA-Z0-9]+:[a-fA-F0-9]{32,})?"
-  local FULL_REGEX="^${DOMAIN_REGEX}${REPO_REGEX}${TAG_REGEX}${DIGEST_REGEX}$"
+  local IPV6_DOMAIN="\[[0-9a-fA-F:]+\]"
+  local DOMAIN_W_DOT="[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z0-9][a-zA-Z0-9-]*)+"
+  local DOMAIN="(${DOMAIN_W_DOT}|localhost|${IPV6_DOMAIN})(:[0-9]+)?/"
+  local REPO_COMP="[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*"
+  local TAG="(:[a-zA-Z0-9_.-]{1,128})"
+  local DIGEST="(@[a-zA-Z][a-zA-Z0-9]*:[0-9a-fA-F]{32,})"
+  local FULL_REGEX="^(${DOMAIN})?${REPO_COMP}(/${REPO_COMP})*(${TAG}|${DIGEST}|${TAG}${DIGEST})?$"
   if [[ "$image" =~ $FULL_REGEX ]]; then
     return 0
   else
