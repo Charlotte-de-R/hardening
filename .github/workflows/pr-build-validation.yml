@@ -1,0 +1,155 @@
+name: PR Build Validation
+
+on:
+  pull_request:
+    paths:
+      - 'update_dockerfiles.sh'
+      - 'templates/**'
+      - 'dockerfiles/**'
+      - '.github/workflows/pr-build-validation.yml'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell-tests:
+    name: Shell and injection tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run existing shell tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./check_update.sh ./update_dockerfiles.sh
+          ./tests/test_check_update.sh
+      - name: Validate update script syntax
+        run: bash -n ./update_dockerfiles.sh
+
+  docker-build:
+    name: Build ${{ matrix.name }} (no push)
+    needs: shell-tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - name: immich-server
+            context: ./dockerfiles/immich-server
+          - name: immich-machine-learning
+            context: ./dockerfiles/immich-machine-learning
+          - name: immich-postgres
+            context: ./dockerfiles/immich-postgres
+          - name: mariadb
+            context: ./dockerfiles/mariadb
+          - name: vaultwarden
+            context: ./dockerfiles/vaultwarden
+          - name: crowdsec
+            context: ./dockerfiles/crowdsec
+          - name: immich-redis
+            context: ./dockerfiles/immich-redis
+          - name: socket-proxy
+            context: ./dockerfiles/socket-proxy
+          - name: tailscale
+            context: ./dockerfiles/tailscale
+          - name: promtail
+            context: ./dockerfiles/promtail
+          - name: tetragon
+            context: ./dockerfiles/tetragon
+          - name: cryptpad
+            context: ./dockerfiles/cryptpad
+          - name: portainer
+            context: ./dockerfiles/portainer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Dockerfiles using the updated script
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./update_dockerfiles.sh
+          ./update_dockerfiles.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check for updates to resolve versions
+        id: update
+        env:
+          TARGET_IMAGE: ${{ matrix.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f ./check_update.sh ]]; then
+            echo "::error::check_update.sh not found"
+            exit 1
+          fi
+
+          # We check the real image so we don't attempt to build unverified upstream tags.
+          if ! ./check_update.sh "ghcr.io/${{ github.repository_owner }}/$TARGET_IMAGE:hardened"; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare build arguments
+        id: build_args
+        env:
+          TARGET_IMAGE: ${{ matrix.name }}
+          UPDATE_VERSION: ${{ steps.update.outputs.latest_version }}
+          DOCKER_CLI_VERSION: ${{ steps.update.outputs.docker_cli_version }}
+          CHECK_STATUS: ${{ steps.update.outputs.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_ARGS=""
+
+          if [[ "$TARGET_IMAGE" == "nextcloud" ]]; then
+            if [[ "$CHECK_STATUS" == "success" && -n "$UPDATE_VERSION" ]]; then
+              BUILD_ARGS="NEXTCLOUD_MIN_VERSION=${NEXTCLOUD_MIN_VERSION:-34.0.4}"
+            fi
+          elif [[ "$TARGET_IMAGE" == "portainer" ]]; then
+            if [[ -z "$DOCKER_CLI_VERSION" ]]; then
+              echo "::error::Invalid or missing Docker CLI version"
+              exit 1
+            fi
+            if [[ "$CHECK_STATUS" == "success" && -n "$UPDATE_VERSION" ]]; then
+              BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"$'\n'"DOCKER_CLI_VERSION=${DOCKER_CLI_VERSION}"
+            else
+              BUILD_ARGS="DOCKER_CLI_VERSION=${DOCKER_CLI_VERSION}"
+            fi
+          else
+            if [[ "$CHECK_STATUS" == "success" && -n "$UPDATE_VERSION" ]]; then
+              BUILD_ARGS="APP_VERSION=${UPDATE_VERSION}"
+            fi
+          fi
+
+          {
+            echo "args<<BUILD_ARGS_EOF"
+            echo "$BUILD_ARGS"
+            echo "BUILD_ARGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build hardened image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile.hardened
+          push: false
+          tags: pr-validation/${{ matrix.name }}:${{ github.sha }}
+          build-args: ${{ steps.build_args.outputs.args }}
+          cache-from: type=gha,scope=pr-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=pr-${{ matrix.name }}
+          provenance: false
+          sbom: false

@@ -34,8 +34,14 @@ update_file() {
 
     export CONTENT="$snippet_content"
     perl -i -0777 -pe '
+        BEGIN { $content = $ENV{CONTENT}; }
         s/# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---/# INSERT_HARDENING_HERE/gs;
-        s/# INSERT_HARDENING_HERE/$ENV{CONTENT}/ge;
+        my $search = "# INSERT_HARDENING_HERE";
+        my $pos = index($_, $search);
+        while ($pos != -1) {
+            substr($_, $pos, length($search), $content);
+            $pos = index($_, $search, $pos + length($content));
+        }
     ' "$target_file"
 
     echo "✅ Updated: $target_file"
