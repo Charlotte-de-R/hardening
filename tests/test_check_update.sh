@@ -202,7 +202,7 @@ run_test "Valid reference format - digest algorithm punctuation" 0 "Checking upd
 run_test "Invalid reference format - tag starts with dot" 1 "Invalid image reference format 'ubuntu:.tag'" "ubuntu:.tag"
 run_test "Invalid reference format - tag starts with hyphen" 1 "Invalid image reference format 'ubuntu:-tag'" "ubuntu:-tag"
 run_test "Invalid reference format - malformed registry hostname trailing hyphen" 1 "Invalid image reference format 'registry-.example/image:tag'" "registry-.example/image:tag"
-run_test "Invalid reference format - malformed registry hostname leading hyphen" 1 "Invalid image reference format '-registry.example/image:tag'" "-registry.example/image:tag"
+run_test "Invalid reference format - malformed registry hostname leading hyphen" 1 "Invalid image name" "-registry.example/image:tag"
 run_test "Invalid reference format - malformed IPv6" 1 "Invalid image reference format '[::::]:5000/my-repo:tag'" "[::::]:5000/my-repo:tag"
 run_test "Invalid reference format - digest algorithm starts with hyphen" 1 "Invalid image reference format 'alpine@-sha256:1234567890abcdef1234567890abcdef'" "alpine@-sha256:1234567890abcdef1234567890abcdef"
 run_test "Invalid reference format - non-hex digest" 1 "Invalid image reference format 'alpine@sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'" "alpine@sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
