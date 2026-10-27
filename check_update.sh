@@ -29,7 +29,7 @@ validate_docker_image() {
   # Tags start with an ASCII alphanumeric or underscore; max 128 chars.
   local TAG='(:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127})'
   # Digest algorithm grammar plus a hexadecimal encoded digest.
-  local DIGEST='(@[a-zA-Z0-9_][a-zA-Z0-9_+.-]*:[a-fA-F0-9]{32,})'
+  local DIGEST='(@[a-zA-Z][a-zA-Z0-9]*([-_+.][a-zA-Z][a-zA-Z0-9]*)*:[a-fA-F0-9]{32,})'
   local FULL_REGEX="^(${DOMAIN})?${REPO_COMP}(/${REPO_COMP})*(${TAG}|${DIGEST}|${TAG}${DIGEST})?$"
 
   [[ "$image" =~ $FULL_REGEX ]] || return 1
