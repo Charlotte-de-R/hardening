@@ -1,0 +1,96 @@
+name: PR Build Validation
+
+on:
+  pull_request:
+    paths:
+      - 'update_dockerfiles.sh'
+      - 'templates/**'
+      - 'dockerfiles/**'
+      - '.github/workflows/pr-build-validation.yml'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell-tests:
+    name: Shell and injection tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run existing shell tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./check_update.sh ./update_dockerfiles.sh
+          ./tests/test_check_update.sh
+      - name: Validate update script syntax
+        run: bash -n ./update_dockerfiles.sh
+
+  docker-build:
+    name: Build ${{ matrix.name }} (no push)
+    needs: shell-tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - name: immich-server
+            context: ./dockerfiles/immich-server
+          - name: immich-machine-learning
+            context: ./dockerfiles/immich-machine-learning
+          - name: immich-postgres
+            context: ./dockerfiles/immich-postgres
+          - name: mariadb
+            context: ./dockerfiles/mariadb
+          - name: vaultwarden
+            context: ./dockerfiles/vaultwarden
+          - name: crowdsec
+            context: ./dockerfiles/crowdsec
+          - name: immich-redis
+            context: ./dockerfiles/immich-redis
+          - name: socket-proxy
+            context: ./dockerfiles/socket-proxy
+          - name: tailscale
+            context: ./dockerfiles/tailscale
+          - name: promtail
+            context: ./dockerfiles/promtail
+          - name: tetragon
+            context: ./dockerfiles/tetragon
+          - name: cryptpad
+            context: ./dockerfiles/cryptpad
+          - name: portainer
+            context: ./dockerfiles/portainer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Dockerfiles using the updated script
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./update_dockerfiles.sh
+          ./update_dockerfiles.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build hardened image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile.hardened
+          push: false
+          tags: pr-validation/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=pr-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=pr-${{ matrix.name }}
+          provenance: false
+          sbom: false
