@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 # Usage: ./check_update.sh <target_image>
 
