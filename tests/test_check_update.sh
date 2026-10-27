@@ -198,7 +198,7 @@ run_test "Valid reference format - custom port" 0 "Checking updates for: localho
 run_test "Valid reference format - IPv6" 0 "Checking updates for: [2001:db8::1]:5000/my-repo:tag" "[2001:db8::1]:5000/my-repo:tag"
 run_test "Valid reference format - single-label registry with port" 0 "Checking updates for: registry:5000/image:tag" "registry:5000/image:tag"
 run_test "Valid reference format - compressed IPv6" 0 "Checking updates for: [2001:db8::1]:5000/my-repo:tag" "[2001:db8::1]:5000/my-repo:tag"
-run_test "Valid reference format - digest algorithm punctuation" 0 "Checking updates for: alpine@sha-abc256:1234567890abcdef1234567890abcdef" "alpine@sha-abc256:1234567890abcdef1234567890abcdef"
+run_test "Valid reference format - digest algorithm punctuation" 0 "Checking updates for: alpine@sha-256:1234567890abcdef1234567890abcdef" "alpine@sha-256:1234567890abcdef1234567890abcdef"
 run_test "Invalid reference format - tag starts with dot" 1 "Invalid image reference format 'ubuntu:.tag'" "ubuntu:.tag"
 run_test "Invalid reference format - tag starts with hyphen" 1 "Invalid image reference format 'ubuntu:-tag'" "ubuntu:-tag"
 run_test "Invalid reference format - malformed registry hostname trailing hyphen" 1 "Invalid image reference format 'registry-.example/image:tag'" "registry-.example/image:tag"
