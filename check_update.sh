@@ -21,16 +21,16 @@ validate_docker_image() {
   # Docker reference grammar: registry names are dotted hostnames, localhost,
   # hostnames with an explicit port, or bracketed IPv6 literals.
   local LABEL='[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?'
-  local DOMAIN_W_DOT="\${LABEL}(\.\${LABEL})+"
+  local DOMAIN_W_DOT="${LABEL}(\.${LABEL})+"
   local IPV6_DOMAIN='\[[0-9a-fA-F:]+\]'
-  local DOMAIN_HOST="(\${DOMAIN_W_DOT}|localhost)(:[0-9]+)?|\${LABEL}:[0-9]+|\${IPV6_DOMAIN}(:[0-9]+)?"
-  local DOMAIN="(\${DOMAIN_HOST})/"
+  local DOMAIN_HOST="(${DOMAIN_W_DOT}|localhost)(:[0-9]+)?|${LABEL}:[0-9]+|${IPV6_DOMAIN}(:[0-9]+)?"
+  local DOMAIN="(${DOMAIN_HOST})/"
   local REPO_COMP='[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*'
   # Tags start with an ASCII alphanumeric or underscore; max 128 chars.
   local TAG='(:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127})'
   # Digest algorithm grammar plus a hexadecimal encoded digest.
   local DIGEST='(@[a-zA-Z0-9_][a-zA-Z0-9_+.-]*:[a-fA-F0-9]{32,})'
-  local FULL_REGEX="^(\${DOMAIN})?\${REPO_COMP}(/\${REPO_COMP})*(\${TAG}|\${DIGEST}|\${TAG}\${DIGEST})?$"
+  local FULL_REGEX="^(${DOMAIN})?${REPO_COMP}(/${REPO_COMP})*(${TAG}|${DIGEST}|${TAG}${DIGEST})?$"
 
   [[ "$image" =~ $FULL_REGEX ]] || return 1
 
@@ -38,7 +38,7 @@ validate_docker_image() {
   # for bracketed literals so malformed forms such as [::::] are rejected.
   if [[ "$image" =~ ^\[([^]]+)\](:[0-9]+)?/ ]]; then
     command -v python3 >/dev/null 2>&1 || return 1
-    python3 - "\${BASH_REMATCH[1]}" <<'PY' >/dev/null 2>&1 || return 1
+    python3 - "${BASH_REMATCH[1]}" <<'PY' >/dev/null 2>&1 || return 1
 import ipaddress
 import sys
 ipaddress.IPv6Address(sys.argv[1])
