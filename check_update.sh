@@ -463,12 +463,17 @@ if echo "$OUTPUT" | grep -q "executable file not found"; then
   exit 0
 fi
 
-UPDATES=$(
-  echo "$OUTPUT" |
-    grep -v "fetch http" |
-    grep -v "WARNING" |
-    grep -E "[a-zA-Z0-9]" || true
-)
+UPDATES=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  if [[ "$line" != *"fetch http"* && "$line" != *"WARNING"* && "$line" =~ [a-zA-Z0-9] ]]; then
+    if [[ -n "$UPDATES" ]]; then
+      UPDATES="${UPDATES}
+${line}"
+    else
+      UPDATES="${line}"
+    fi
+  fi
+done <<< "$OUTPUT"
 
 if [[ -n "$UPDATES" ]]; then
   echo "OS updates detected:"
