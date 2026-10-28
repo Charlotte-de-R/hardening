@@ -309,8 +309,8 @@ jobs:
           build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: true
-          sbom: true
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
 
       - name: Verify built Nextcloud version
         if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request')
