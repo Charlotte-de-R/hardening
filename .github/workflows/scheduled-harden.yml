@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '30 19 * * *'
 
+  pull_request:
+    branches: [ main, master ]
+
   workflow_dispatch:
     inputs:
       target_image:
@@ -176,11 +179,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -f ./inject_hardening.sh ]]; then
-            chmod +x ./inject_hardening.sh
-            ./inject_hardening.sh "${{ matrix.name }}"
+          if [[ -f ./update_dockerfiles.sh ]]; then
+            ./update_dockerfiles.sh "${{ matrix.context }}"
           else
-            echo "No inject_hardening.sh found; skipping template injection."
+            echo "::error::update_dockerfiles.sh not found"
+            exit 1
           fi
 
       - name: Set up Docker Buildx
@@ -217,7 +220,7 @@ jobs:
 
       - name: Prepare build arguments
         id: build_args
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
         env:
           TARGET_IMAGE: ${{ matrix.name }}
           NEXTCLOUD_MIN_VERSION: ${{ env.NEXTCLOUD_MIN_VERSION }}
@@ -295,21 +298,22 @@ jobs:
 
       - name: Build and push hardened image
         id: build
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.image.outputs.image }}
           build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: true
-          sbom: true
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
 
       - name: Verify built Nextcloud version
-        if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true')
+        if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request')
         env:
           IMAGE: ${{ steps.image.outputs.image }}
           NEXTCLOUD_MIN_VERSION: ${{ env.NEXTCLOUD_MIN_VERSION }}
@@ -317,7 +321,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker pull "$IMAGE"
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            docker pull "$IMAGE"
+          fi
 
           ACTUAL_VERSION=$(docker image inspect "$IMAGE" \
             --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
@@ -335,7 +341,7 @@ jobs:
           echo "Verified Nextcloud version: $ACTUAL_VERSION"
 
       - name: Sign image with Cosign
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
         continue-on-error: true
         env:
           IMAGE: ${{ steps.image.outputs.image }}
@@ -346,7 +352,7 @@ jobs:
           cosign sign --yes "$IMAGE"
 
       - name: Verify image signature
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
         continue-on-error: true
         env:
           IMAGE: ${{ steps.image.outputs.image }}
@@ -360,7 +366,7 @@ jobs:
 
       - name: Run Trivy vulnerability scan
         id: trivy
-        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true'
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.76.1
