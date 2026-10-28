@@ -128,6 +128,7 @@ fi
 # Test 5: Directory argument
 create_dockerfile "dockerfiles/dir-test/Dockerfile.hardened" "$MOCK_DOCKERFILE_CONTENT"
 create_dockerfile "dockerfiles/dir-test/ignore.txt" "Do not touch this"
+cp "dockerfiles/dir-test/ignore.txt" "dockerfiles/dir-test/ignore.txt.backup"
 run_test "Directory argument update" 0 "✅ Updated: dockerfiles/dir-test/Dockerfile.hardened" dockerfiles/dir-test
 
 # Verify content of directory file
@@ -135,7 +136,7 @@ if ! grep -q "This is the mock universal snippet." "dockerfiles/dir-test/Dockerf
     echo "FAILED: Content was not updated in directory test."
     FAILED=1
 fi
-if ! grep -q "Do not touch this" "dockerfiles/dir-test/ignore.txt"; then
+if ! cmp -s "dockerfiles/dir-test/ignore.txt" "dockerfiles/dir-test/ignore.txt.backup"; then
     echo "FAILED: Non-target file was modified in directory test."
     FAILED=1
 fi
