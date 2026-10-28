@@ -391,7 +391,8 @@ elif [[ -n "$REPO" ]]; then
 
     if ! docker buildx imagetools inspect "$BASE_IMAGE_REF" >/dev/null 2>&1; then
       # CrowdSec can publish a GitHub release before its GHCR image is available.
-      # Keep the current verified version when possible; never build an unverified tag.
+      # Keep the current verified version when possible; PR validation can still build it.
+      # Never build an unverified tag.
       if [[ "$IMAGE_NAME" == "crowdsec" && "$MISSING_IMAGE" == false && -n "$CURRENT_VER" ]]; then
         echo "WARNING: CrowdSec release $DESIRED_VER has no published GHCR image yet."
         echo "Keeping current verified CrowdSec version: $CURRENT_VER"
