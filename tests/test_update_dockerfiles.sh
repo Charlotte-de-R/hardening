@@ -127,11 +127,16 @@ fi
 
 # Test 5: Directory argument
 create_dockerfile "dockerfiles/dir-test/Dockerfile.hardened" "$MOCK_DOCKERFILE_CONTENT"
+create_dockerfile "dockerfiles/dir-test/ignore.txt" "Do not touch this"
 run_test "Directory argument update" 0 "✅ Updated: dockerfiles/dir-test/Dockerfile.hardened" dockerfiles/dir-test
 
 # Verify content of directory file
 if ! grep -q "This is the mock universal snippet." "dockerfiles/dir-test/Dockerfile.hardened"; then
     echo "FAILED: Content was not updated in directory test."
+    FAILED=1
+fi
+if ! grep -q "Do not touch this" "dockerfiles/dir-test/ignore.txt"; then
+    echo "FAILED: Non-target file was modified in directory test."
     FAILED=1
 fi
 
@@ -143,36 +148,18 @@ CMD ["echo", "test"]
 MOCK
 )
 create_dockerfile "dockerfiles/no-tags/Dockerfile.hardened" "$MOCK_MISSING_TAGS"
+cp "dockerfiles/no-tags/Dockerfile.hardened" "dockerfiles/no-tags/Dockerfile.hardened.backup"
 run_test "Missing hardening tags" 0 "✅ Updated: dockerfiles/no-tags/Dockerfile.hardened" dockerfiles/no-tags/Dockerfile.hardened
 
-# Verify content of no-tags file (should remain unchanged)
-if grep -q "This is the mock universal snippet." "dockerfiles/no-tags/Dockerfile.hardened"; then
-    echo "FAILED: Missing tags file was incorrectly updated."
+# Verify content of no-tags file (should remain exactly unchanged)
+if ! cmp -s "dockerfiles/no-tags/Dockerfile.hardened" "dockerfiles/no-tags/Dockerfile.hardened.backup"; then
+    echo "FAILED: Missing tags file was modified despite having no tags."
     FAILED=1
 fi
 
 # Test 7: Multiple hardening tags
 MOCK_MULTIPLE_TAGS=$(cat << 'MOCK'
 FROM alpine:latest
-# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---
-# INSERT_HARDENING_HERE
-old hardening 1
-# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---
-# INSERT_HARDENING_HERE
-RUN echo "Middle"
-# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---
-# INSERT_HARDENING_HERE
-old hardening 2
-# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---
-# INSERT_HARDENING_HERE
-CMD ["echo", "test"]
-MOCK
-)
-# update_dockerfiles.sh uses '# --- COMMON HARDENING START.*?# --- COMMON HARDENING END ---'
-# as the match regex, so we must recreate that exact structure in mock.
-
-MOCK_MULTIPLE_TAGS_REAL=$(cat << 'MOCK'
-FROM alpine:latest
 # --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---
 old hardening 1
 # --- COMMON HARDENING END ---
@@ -183,10 +170,10 @@ old hardening 2
 CMD ["echo", "test"]
 MOCK
 )
-create_dockerfile "dockerfiles/multiple-tags/Dockerfile.hardened" "$MOCK_MULTIPLE_TAGS_REAL"
+create_dockerfile "dockerfiles/multiple-tags/Dockerfile.hardened" "$MOCK_MULTIPLE_TAGS"
 run_test "Multiple hardening tags" 0 "✅ Updated: dockerfiles/multiple-tags/Dockerfile.hardened" dockerfiles/multiple-tags/Dockerfile.hardened
 
-# Verify content of multiple-tags file (should replace both blocks)
+# Verify content of multiple-tags file
 count=$(grep -c "This is the mock universal snippet." "dockerfiles/multiple-tags/Dockerfile.hardened" || true)
 if [ "$count" -ne 2 ]; then
     echo "FAILED: Multiple tags file did not replace all blocks. Expected 2, found $count."
@@ -195,6 +182,14 @@ if [ "$count" -ne 2 ]; then
 fi
 if grep -q "old hardening 1" "dockerfiles/multiple-tags/Dockerfile.hardened" || grep -q "old hardening 2" "dockerfiles/multiple-tags/Dockerfile.hardened"; then
     echo "FAILED: Old content was not removed in multiple-tags file."
+    FAILED=1
+fi
+if ! grep -q 'RUN echo "Middle"' "dockerfiles/multiple-tags/Dockerfile.hardened"; then
+    echo "FAILED: Intermediate content was lost in multiple-tags file."
+    FAILED=1
+fi
+if ! grep -q 'FROM alpine:latest' "dockerfiles/multiple-tags/Dockerfile.hardened" || ! grep -q 'CMD \["echo", "test"\]' "dockerfiles/multiple-tags/Dockerfile.hardened"; then
+    echo "FAILED: Top/bottom file boundaries were corrupted in multiple-tags file."
     FAILED=1
 fi
 
@@ -216,11 +211,12 @@ fi
 
 
 # Test 9: Repeated processing (Idempotency)
+cp "dockerfiles/empty-tags/Dockerfile.hardened" "dockerfiles/empty-tags/Dockerfile.hardened.backup"
 run_test "Repeated processing (Idempotency)" 0 "✅ Updated: dockerfiles/empty-tags/Dockerfile.hardened" dockerfiles/empty-tags/Dockerfile.hardened
-# Verify content hasn't changed structure
-count=$(grep -c "This is the mock universal snippet." "dockerfiles/empty-tags/Dockerfile.hardened" || true)
-if [ "$count" -ne 1 ]; then
-    echo "FAILED: Repeated processing duplicated or removed content. Expected 1, found $count."
+# Verify content hasn't changed at all
+if ! cmp -s "dockerfiles/empty-tags/Dockerfile.hardened" "dockerfiles/empty-tags/Dockerfile.hardened.backup"; then
+    echo "FAILED: Repeated processing modified the file."
+    diff "dockerfiles/empty-tags/Dockerfile.hardened" "dockerfiles/empty-tags/Dockerfile.hardened.backup" || true
     FAILED=1
 fi
 
@@ -240,10 +236,8 @@ fi
 
 if [ "$FAILED" -ne 0 ]; then
     echo "Some update_dockerfiles.sh tests failed."
-    # do not use exit 1 here as it will block the session
-else
-    echo "All update_dockerfiles.sh tests passed successfully!"
+    exit 1
 fi
 
-# return $FAILED to parent bash
-(exit $FAILED)
+echo "All update_dockerfiles.sh tests passed successfully!"
+exit 0
