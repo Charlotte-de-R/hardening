@@ -66,6 +66,38 @@ export DOCKER_LOG="$DOCKER_LOG"
 
 FAILED=0
 
+run_and_verify_code() {
+  local expected_code="$1"
+  local output_file="$2"
+  local err_file="$3"
+  shift 3
+
+  if [ "${1:-}" = "--" ]; then
+    shift
+  fi
+
+  local actual_code=0
+  set +e
+  if [ -z "$err_file" ]; then
+    "$@" >"$output_file" 2>&1
+  else
+    "$@" >"$output_file" 2>"$err_file"
+  fi
+  actual_code=$?
+  set -e
+
+  if [ "$actual_code" -ne "$expected_code" ]; then
+    echo "FAILED (Expected exit code $expected_code, got $actual_code)"
+    cat "$output_file"
+    if [ -n "$err_file" ]; then
+      cat "$err_file"
+    fi
+    FAILED=1
+    return 1
+  fi
+  return 0
+}
+
 run_test() {
   local test_name="$1"
   local expected_code="$2"
@@ -75,17 +107,8 @@ run_test() {
   echo -n "Running test: $test_name... "
   local output_file
   output_file=$(mktemp)
-  local actual_code=0
 
-  set +e
-  ./check_update.sh "$@" >"$output_file" 2>&1
-  actual_code=$?
-  set -e
-
-  if [ "$actual_code" -ne "$expected_code" ]; then
-    echo "FAILED (Expected exit code $expected_code, got $actual_code)"
-    cat "$output_file"
-    FAILED=1
+  if ! run_and_verify_code "$expected_code" "$output_file" "" -- ./check_update.sh "$@"; then
     rm -f "$output_file"
     return
   fi
@@ -116,17 +139,8 @@ run_mapping_test() {
 
   local output_file
   output_file=$(mktemp)
-  local actual_code=0
 
-  set +e
-  ./check_update.sh "$image_arg" >"$output_file" 2>&1
-  actual_code=$?
-  set -e
-
-  if [ "$actual_code" -ne 0 ]; then
-    echo "FAILED (Expected exit code 0, got $actual_code)"
-    cat "$output_file"
-    FAILED=1
+  if ! run_and_verify_code 0 "$output_file" "" -- ./check_update.sh "$image_arg"; then
     rm -f "$output_file"
     return
   fi
@@ -264,22 +278,13 @@ run_docker_pull_failure_test() {
 
   local output_file
   output_file=$(mktemp)
-  local actual_code=0
   local expected_code=0
   if [ "$image_arg" = "unknown-app" ]; then
     expected_code=1
   fi
 
   # Override DOCKER_PULL_EXIT_CODE only for this execution
-  set +e
-  DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "$image_arg" >"$output_file" 2>&1
-  actual_code=$?
-  set -e
-
-  if [ "$actual_code" -ne "$expected_code" ]; then
-    echo "FAILED (Expected exit code $expected_code, got $actual_code)"
-    cat "$output_file"
-    FAILED=1
+  if ! run_and_verify_code "$expected_code" "$output_file" "" -- env DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "$image_arg"; then
     rm -f "$output_file"
     return
   fi
@@ -387,12 +392,10 @@ EOF
 
   local output_file
   output_file=$(mktemp)
-  local actual_code=0
 
-  set +e
-  DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "vaultwarden" >"$output_file" 2>&1
-  actual_code=$?
-  set -e
+  # Run checking for exit code 1
+  local cmd_failed=0
+  run_and_verify_code 1 "$output_file" "" -- env DOCKER_PULL_EXIT_CODE=1 ./check_update.sh "vaultwarden" || cmd_failed=1
 
   # Restore curl stub
   cat <<'EOF' > "$STUB_DIR/curl"
@@ -402,10 +405,7 @@ echo '{"tag_name": "v1.0.0"}'
 exit 0
 EOF
 
-  if [ "$actual_code" -ne 1 ]; then
-    echo "FAILED (Expected fail-closed exit code 1, got $actual_code)"
-    cat "$output_file"
-    FAILED=1
+  if [ "$cmd_failed" -eq 1 ]; then
     rm -f "$output_file"
     return
   fi
@@ -464,17 +464,8 @@ run_os_check_test() {
 
   local output_file
   output_file=$(mktemp)
-  local actual_code=0
 
-  set +e
-  ./check_update.sh "$image_arg" >"$output_file" 2>&1
-  actual_code=$?
-  set -e
-
-  if [ "$actual_code" -ne 0 ]; then
-    echo "FAILED (Expected exit code 0, got $actual_code)"
-    cat "$output_file"
-    FAILED=1
+  if ! run_and_verify_code 0 "$output_file" "" -- ./check_update.sh "$image_arg"; then
     rm -f "$output_file"
     return
   fi
@@ -617,9 +608,10 @@ STUB
     unset GITHUB_TOKEN
   fi
 
-  set +e
-  ./check_update.sh "$target_app" >"$output_file" 2>"$err_file"
-  set -e
+  if ! run_and_verify_code 0 "$output_file" "$err_file" -- ./check_update.sh "$target_app"; then
+    rm -f "$output_file" "$err_file"
+    return
+  fi
 
   # Verify correct output
   if [ -n "$expected_version" ]; then
