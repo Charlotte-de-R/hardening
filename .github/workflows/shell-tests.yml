@@ -14,5 +14,6 @@ jobs:
 
       - name: Run shell tests
         run: |
-          chmod +x check_update.sh
+          chmod +x check_update.sh update_dockerfiles.sh
           ./tests/test_check_update.sh
+          ./tests/test_update_dockerfiles.sh
