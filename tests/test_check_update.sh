@@ -570,6 +570,110 @@ DOCKER_RUN_STDERR="docker: Error response from daemon: some random error" DOCKER
 # Known limitation: Empty output with non-zero exit code still results in needs_update=false.
 DOCKER_RUN_OUTPUT="" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit code with empty output" "unknown-app" "false" "Image OS is up-to-date"
 
+
+
+# --- check_github_release function test suite ---
+
+run_github_release_test_end_to_end() {
+  local test_name="$1"
+  local target_app="$2"
+  local mock_api_response_releases="$3"
+  local mock_api_response_tags="$4"
+  local with_token="$5"
+  local expected_version="$6"
+  local mock_curl_exit_code="${7:-0}"
+
+  echo -n "Running E2E github release test: $test_name... "
+
+  > "$CURL_LOG"
+  > "$TEST_GITHUB_OUTPUT"
+  local output_file
+  output_file=$(mktemp)
+  local err_file
+  err_file=$(mktemp)
+
+  # Override curl stub temporarily
+  cat <<STUB > "$STUB_DIR/curl"
+#!/usr/bin/env bash
+echo "\$@" >> "$CURL_LOG"
+if [[ "$mock_curl_exit_code" != "0" ]]; then
+  exit "$mock_curl_exit_code"
+fi
+if [[ "\$*" == *"releases/latest"* ]]; then
+  echo '${mock_api_response_releases}'
+elif [[ "\$*" == *"/tags?per_page=1"* ]]; then
+  echo '${mock_api_response_tags}'
+elif [[ "\$*" == *"tags"* ]]; then
+  echo '{"results":[{"name":"version-2026.10.0"}]}'
+else
+  echo '{}'
+fi
+STUB
+  chmod +x "$STUB_DIR/curl"
+
+  if [ "$with_token" = "true" ]; then
+    export GITHUB_TOKEN="fake_token"
+  else
+    unset GITHUB_TOKEN
+  fi
+
+  set +e
+  ./check_update.sh "$target_app" >"$output_file" 2>"$err_file"
+  set -e
+
+  # Verify correct output
+  if [ -n "$expected_version" ]; then
+    if ! grep -q "latest_version=$expected_version" "$TEST_GITHUB_OUTPUT"; then
+       echo "FAILED (Expected latest_version=$expected_version in GITHUB_OUTPUT)"
+       cat "$TEST_GITHUB_OUTPUT"
+       cat "$output_file"
+       FAILED=1
+       rm -f "$output_file" "$err_file"
+       return
+    fi
+  else
+     if ! grep -q "WARNING: Could not fetch a release/tag" "$err_file"; then
+       echo "FAILED (Expected WARNING about failing to fetch release in stderr)"
+       cat "$err_file"
+       FAILED=1
+       rm -f "$output_file" "$err_file"
+       return
+     fi
+     if grep -q "WARNING: Could not fetch a release/tag" "$output_file"; then
+       echo "FAILED (WARNING incorrectly leaked into stdout)"
+       cat "$output_file"
+       FAILED=1
+       rm -f "$output_file" "$err_file"
+       return
+     fi
+  fi
+
+  if [ "$with_token" = "true" ] && ! grep -q "Authorization: Bearer fake_token" "$CURL_LOG"; then
+    echo "FAILED (Expected GITHUB_TOKEN to be used in curl, but it wasn't)"
+    cat "$CURL_LOG"
+    FAILED=1
+    rm -f "$output_file" "$err_file"
+    return
+  fi
+
+  if [ "$with_token" != "true" ] && grep -q "Authorization: Bearer" "$CURL_LOG"; then
+    echo "FAILED (Expected no GITHUB_TOKEN in curl, but found one)"
+    cat "$CURL_LOG"
+    FAILED=1
+    rm -f "$output_file" "$err_file"
+    return
+  fi
+
+  echo "PASSED"
+  rm -f "$output_file" "$err_file"
+}
+
+run_github_release_test_end_to_end "Successful release retrieval (no strip)" "tailscale" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "v1.2.3"
+run_github_release_test_end_to_end "Successful release retrieval (with strip_v)" "vaultwarden" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "1.2.3"
+run_github_release_test_end_to_end "Authenticated requests with GITHUB_TOKEN" "tailscale" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "true" "v1.2.3"
+run_github_release_test_end_to_end "Fallback to tags API" "tailscale" '{"tag_name": "null"}' '[{"name": "v2.0.0"}]' "false" "v2.0.0"
+run_github_release_test_end_to_end "Missing or invalid release data" "tailscale" '{"tag_name": "null"}' '[{"name": null}]' "false" ""
+run_github_release_test_end_to_end "Curl exit error" "tailscale" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "" "22"
 if [ "$FAILED" -ne 0 ]; then
   echo "Some tests failed."
   exit 1

@@ -64,6 +64,47 @@ write_output() {
   fi
 }
 
+check_github_release() {
+  local repo="$1"
+  local strip_v="${2:-false}"
+
+  local curl_opts=(
+    -fsSL
+    --retry 2
+    --connect-timeout 10
+  )
+
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    curl_opts+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+  fi
+
+  local raw_tag
+  raw_tag=$(
+    curl "${curl_opts[@]}" \
+      "https://api.github.com/repos/${repo}/releases/latest" |
+      jq -r '.tag_name // empty' 2>/dev/null || true
+  )
+
+  if [[ -z "$raw_tag" || "$raw_tag" == "null" ]]; then
+    raw_tag=$(
+      curl "${curl_opts[@]}" \
+        "https://api.github.com/repos/${repo}/tags?per_page=1" |
+        jq -r '.[0].name // empty' 2>/dev/null || true
+    )
+  fi
+
+  if [[ -n "$raw_tag" && "$raw_tag" != "null" ]]; then
+    local latest_ver="$raw_tag"
+
+    if [[ "$strip_v" == true ]]; then
+      latest_ver="${latest_ver#v}"
+    fi
+    echo "$latest_ver"
+  else
+    echo "WARNING: Could not fetch a release/tag from $repo." >&2
+  fi
+}
+
 version_lt() {
   local a="${1#v}"
   local b="${2#v}"
@@ -193,40 +234,7 @@ elif [[ -n "$REPO" ]]; then
   fi
 
   echo "Fetching latest release for $REPO..."
-
-  CURL_OPTS=(
-    -fsSL
-    --retry 2
-    --connect-timeout 10
-  )
-
-  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    CURL_OPTS+=(-H "Authorization: Bearer $GITHUB_TOKEN")
-  fi
-
-  RAW_TAG=$(
-    curl "${CURL_OPTS[@]}" \
-      "https://api.github.com/repos/${REPO}/releases/latest" |
-      jq -r '.tag_name // empty' 2>/dev/null || true
-  )
-
-  if [[ -z "$RAW_TAG" ]]; then
-    RAW_TAG=$(
-      curl "${CURL_OPTS[@]}" \
-        "https://api.github.com/repos/${REPO}/tags?per_page=1" |
-        jq -r '.[0].name // empty' 2>/dev/null || true
-    )
-  fi
-
-  if [[ -n "$RAW_TAG" && "$RAW_TAG" != "null" ]]; then
-    LATEST_VER="$RAW_TAG"
-
-    if [[ "$STRIP_V" == true ]]; then
-      LATEST_VER="${LATEST_VER#v}"
-    fi
-  else
-    echo "WARNING: Could not fetch a release/tag from $REPO."
-  fi
+  LATEST_VER=$(check_github_release "$REPO" "$STRIP_V")
 
   # ------------------------------------------------
   # CryptPad:
