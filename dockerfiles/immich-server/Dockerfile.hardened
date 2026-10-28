@@ -40,7 +40,7 @@ RUN mkdir -p /tmp/patch && \
     cd /tmp/patch && \
     npm init -y && \
     npm install protobufjs@7.5.5 && \
-    find /usr/src/app/server/node_modules -type d -name "protobufjs" -prune > /tmp/protobufjs_dirs.txt && \
+    find /usr/src/app -type d -name "protobufjs" -prune > /tmp/protobufjs_dirs.txt && \
     COUNT=$(wc -l < /tmp/protobufjs_dirs.txt) && \
     if [ "$COUNT" -eq 0 ]; then echo "Error: No protobufjs instance found to patch."; exit 1; fi && \
     while IFS= read -r dir; do \
@@ -52,7 +52,7 @@ RUN mkdir -p /tmp/patch && \
 RUN mkdir -p /tmp/patch-proxy && cd /tmp/patch-proxy && \
     npm init -y && \
     npm install proxy-addr@2.0.8 && \
-    find /usr/src/app/server/node_modules -type d -name "proxy-addr" -prune > /tmp/proxy_dirs.txt && \
+    find /usr/src/app -type d -name "proxy-addr" -prune > /tmp/proxy_dirs.txt && \
     COUNT=$(wc -l < /tmp/proxy_dirs.txt) && \
     if [ "$COUNT" -eq 0 ]; then echo "Error: No proxy-addr instance found to patch."; exit 1; fi && \
     while IFS= read -r dir; do \
@@ -65,7 +65,7 @@ RUN mkdir -p /tmp/patch-handlebars && cd /tmp/patch-handlebars && \
     npm init -y && \
     npm install handlebars@4.7.10 && \
     echo "Searching for handlebars directories..." && \
-    find /usr/src/app/server/node_modules -type d -name "handlebars" -prune > /tmp/handlebars_dirs.txt && \
+    find /usr/src/app -type d -name "handlebars" -prune > /tmp/handlebars_dirs.txt && \
     COUNT=$(wc -l < /tmp/handlebars_dirs.txt) && \
     echo "Found $COUNT handlebars instance(s) to patch." && \
     if [ "$COUNT" -eq 0 ]; then echo "Error: No handlebars instance found to patch."; exit 1; fi && \
@@ -96,7 +96,7 @@ function findPackageJson(dir) {\
   }\
   return results;\
 }\
-const pkgs = findPackageJson('/usr/src/app/server/node_modules');\
+const pkgs = findPackageJson('/usr/src/app');\
 if (pkgs.length === 0) { console.error('Error: No handlebars packages found.'); process.exit(1); }\
 pkgs.forEach(pkg => {\
   const pkgDir = path.dirname(pkg);\
