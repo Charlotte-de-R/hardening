@@ -176,11 +176,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -f ./inject_hardening.sh ]]; then
-            chmod +x ./inject_hardening.sh
-            ./inject_hardening.sh "${{ matrix.name }}"
+          if [[ -f ./update_dockerfiles.sh ]]; then
+            ./update_dockerfiles.sh "${{ matrix.context }}"
           else
-            echo "No inject_hardening.sh found; skipping template injection."
+            echo "::error::update_dockerfiles.sh not found"
+            exit 1
           fi
 
       - name: Set up Docker Buildx
