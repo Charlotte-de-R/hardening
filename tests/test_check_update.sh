@@ -90,7 +90,7 @@ run_test() {
     return
   fi
 
-  if ! grep -q "$expected_output_pattern" "$output_file"; then
+  if ! grep -Fq "$expected_output_pattern" "$output_file"; then
     echo "FAILED (Output did not contain pattern '$expected_output_pattern')"
     cat "$output_file"
     FAILED=1
@@ -184,6 +184,35 @@ run_test "Hyphen argument -h" 1 "Invalid image name" "-h"
 run_test "Hyphen argument --help" 1 "Invalid image name" "--help"
 run_test "Hyphen argument -invalid" 1 "Invalid image name" "-invalid"
 run_test "Valid image name" 0 "Checking updates for: ghcr.io/example/owner/repo/image:tag" "ghcr.io/example/owner/repo/image:tag"
+
+run_test "Invalid reference format - space prefix" 1 "Invalid image reference format ' -v /tmp:/tmp alpine'" " -v /tmp:/tmp alpine"
+run_test "Invalid reference format - option injection" 1 "Invalid image name '--entrypoint=bash'" "--entrypoint=bash"
+run_test "Invalid reference format - command separator" 1 "Invalid image reference format 'alpine;echo'" "alpine;echo"
+run_test "Invalid reference format - shell interpolation" 1 "Invalid image reference format 'alpine\$(echo hacked)'" 'alpine$(echo hacked)'
+run_test "Invalid reference format - newline" 1 "Invalid image reference format" "alpine"$'\n'"echo"
+run_test "Invalid reference format - shell background" 1 "Invalid image reference format 'alpine & echo'" "alpine & echo"
+run_test "Invalid reference format - hyphen prefix bypass" 1 "Invalid image name '-alpine'" "-alpine"
+run_test "Valid reference format - standard" 0 "Checking updates for: ubuntu" "ubuntu"
+run_test "Valid reference format - digest" 0 "Checking updates for: alpine@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" "alpine@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+run_test "Valid reference format - custom port" 0 "Checking updates for: localhost:5000/my-image:latest" "localhost:5000/my-image:latest"
+run_test "Valid reference format - IPv6" 0 "Checking updates for: [2001:db8::1]:5000/my-repo:tag" "[2001:db8::1]:5000/my-repo:tag"
+run_test "Valid reference format - single-label registry with port" 0 "Checking updates for: registry:5000/image:tag" "registry:5000/image:tag"
+run_test "Valid reference format - compressed IPv6" 0 "Checking updates for: [2001:db8::1]:5000/my-repo:tag" "[2001:db8::1]:5000/my-repo:tag"
+run_test "Valid reference format - digest algorithm punctuation" 0 "Checking updates for: alpine@sha-abc256:1234567890abcdef1234567890abcdef" "alpine@sha-abc256:1234567890abcdef1234567890abcdef"
+run_test "Invalid reference format - digest algorithm separator followed by digit" 1 "Invalid image reference format 'alpine@sha-256:1234567890abcdef1234567890abcdef'" "alpine@sha-256:1234567890abcdef1234567890abcdef"
+run_test "Invalid reference format - tag starts with dot" 1 "Invalid image reference format 'ubuntu:.tag'" "ubuntu:.tag"
+run_test "Invalid reference format - tag starts with hyphen" 1 "Invalid image reference format 'ubuntu:-tag'" "ubuntu:-tag"
+run_test "Invalid reference format - malformed registry hostname trailing hyphen" 1 "Invalid image reference format 'registry-.example/image:tag'" "registry-.example/image:tag"
+run_test "Invalid reference format - malformed registry hostname leading hyphen" 1 "Invalid image name" "-registry.example/image:tag"
+run_test "Invalid reference format - malformed IPv6" 1 "Invalid image reference format '[::::]:5000/my-repo:tag'" "[::::]:5000/my-repo:tag"
+run_test "Invalid reference format - digest algorithm starts with hyphen" 1 "Invalid image reference format 'alpine@-sha256:1234567890abcdef1234567890abcdef'" "alpine@-sha256:1234567890abcdef1234567890abcdef"
+run_test "Invalid reference format - digest algorithm starts with underscore" 1 "Invalid image reference format 'alpine@_sha256:1234567890abcdef1234567890abcdef'" "alpine@_sha256:1234567890abcdef1234567890abcdef"
+run_test "Invalid reference format - digest algorithm repeated separator" 1 "Invalid image reference format 'alpine@sha--256:1234567890abcdef1234567890abcdef'" "alpine@sha--256:1234567890abcdef1234567890abcdef"
+run_test "Invalid reference format - digest algorithm trailing separator" 1 "Invalid image reference format 'alpine@sha256-:1234567890abcdef1234567890abcdef'" "alpine@sha256-:1234567890abcdef1234567890abcdef"
+run_test "Invalid reference format - non-hex digest" 1 "Invalid image reference format 'alpine@sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'" "alpine@sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+run_test "Invalid reference format - uppercase repo" 1 "Invalid image reference format 'FOO/bar'" "FOO/bar"
+run_test "Invalid reference format - consecutive separators" 1 "Invalid image reference format 'foo..bar'" "foo..bar"
+run_test "Invalid reference format - mixed separators" 1 "Invalid image reference format 'foo.-bar'" "foo.-bar"
 
 # --- Repository mapping tests ---
 # 1. tailscale (STRIP_V=false)
