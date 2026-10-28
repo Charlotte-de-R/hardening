@@ -303,14 +303,12 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
+          push: false
+          load: true
           tags: ${{ steps.image.outputs.image }}
           build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: ${{ github.event_name != 'pull_request' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
 
       - name: Verify built Nextcloud version
         if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request')
@@ -320,10 +318,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
-            docker pull "$IMAGE"
-          fi
 
           ACTUAL_VERSION=$(docker image inspect "$IMAGE" \
             --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')
@@ -340,30 +334,6 @@ jobs:
 
           echo "Verified Nextcloud version: $ACTUAL_VERSION"
 
-      - name: Sign image with Cosign
-        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
-        continue-on-error: true
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cosign sign --yes "$IMAGE"
-
-      - name: Verify image signature
-        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
-        continue-on-error: true
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cosign verify "$IMAGE" \
-            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
-
       - name: Run Trivy vulnerability scan
         id: trivy
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
@@ -374,13 +344,53 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '0'
-          ignore-unfixed: false
+          exit-code: '1'
+          ignore-unfixed: true
           vuln-type: os,library
           scanners: vuln,misconfig,secret
 
+      - name: Push image to registry
+        id: push
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker push "$IMAGE"
+          IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+
+          if [[ -z "$IMAGE_DIGEST" ]]; then
+            echo "::error::Could not resolve image digest after push"
+            exit 1
+          fi
+
+          echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> "$GITHUB_ENV"
+          echo "Pushed image digest: $IMAGE_DIGEST"
+
+      - name: Sign image with Cosign
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign sign --yes "${{ env.IMAGE_DIGEST }}"
+
+      - name: Verify image signature
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify "${{ env.IMAGE_DIGEST }}" \
+            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+
       - name: Upload Trivy SARIF to GitHub Security
-        if: always() && hashFiles('trivy-results.sarif') != ''
+        if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure') && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-results.sarif
