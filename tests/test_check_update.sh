@@ -576,12 +576,12 @@ DOCKER_RUN_OUTPUT="" DOCKER_RUN_EXIT_CODE=1 run_os_check_test "Non-zero exit cod
 
 run_github_release_test_end_to_end() {
   local test_name="$1"
-  local mock_repo="$2"
-  local strip_v="$3"
-  local mock_api_response_releases="$4"
-  local mock_api_response_tags="$5"
-  local with_token="$6"
-  local expected_version="$7"
+  local target_app="$2"
+  local mock_api_response_releases="$3"
+  local mock_api_response_tags="$4"
+  local with_token="$5"
+  local expected_version="$6"
+  local mock_curl_exit_code="${7:-0}"
 
   echo -n "Running E2E github release test: $test_name... "
 
@@ -589,11 +589,16 @@ run_github_release_test_end_to_end() {
   > "$TEST_GITHUB_OUTPUT"
   local output_file
   output_file=$(mktemp)
+  local err_file
+  err_file=$(mktemp)
 
   # Override curl stub temporarily
   cat <<STUB > "$STUB_DIR/curl"
 #!/usr/bin/env bash
 echo "\$@" >> "$CURL_LOG"
+if [[ "$mock_curl_exit_code" != "0" ]]; then
+  exit "$mock_curl_exit_code"
+fi
 if [[ "\$*" == *"releases/latest"* ]]; then
   echo '${mock_api_response_releases}'
 elif [[ "\$*" == *"/tags?per_page=1"* ]]; then
@@ -612,16 +617,8 @@ STUB
     unset GITHUB_TOKEN
   fi
 
-  # Call check_update.sh with cryptpad to ensure curl gets called with the stub
-  # The tests use vaultwarden, which has STRIP_V=true, and tailscale which has false
-
-  local target_app="tailscale"
-  if [ "$strip_v" = "true" ]; then
-    target_app="vaultwarden"
-  fi
-
   set +e
-  ./check_update.sh "$target_app" >"$output_file" 2>&1
+  ./check_update.sh "$target_app" >"$output_file" 2>"$err_file"
   set -e
 
   # Verify correct output
@@ -631,15 +628,22 @@ STUB
        cat "$TEST_GITHUB_OUTPUT"
        cat "$output_file"
        FAILED=1
-       rm -f "$output_file"
+       rm -f "$output_file" "$err_file"
        return
     fi
   else
-     if ! grep -q "WARNING: Could not fetch a release/tag" "$output_file"; then
-       echo "FAILED (Expected WARNING about failing to fetch release)"
+     if ! grep -q "WARNING: Could not fetch a release/tag" "$err_file"; then
+       echo "FAILED (Expected WARNING about failing to fetch release in stderr)"
+       cat "$err_file"
+       FAILED=1
+       rm -f "$output_file" "$err_file"
+       return
+     fi
+     if grep -q "WARNING: Could not fetch a release/tag" "$output_file"; then
+       echo "FAILED (WARNING incorrectly leaked into stdout)"
        cat "$output_file"
        FAILED=1
-       rm -f "$output_file"
+       rm -f "$output_file" "$err_file"
        return
      fi
   fi
@@ -648,7 +652,7 @@ STUB
     echo "FAILED (Expected GITHUB_TOKEN to be used in curl, but it wasn't)"
     cat "$CURL_LOG"
     FAILED=1
-    rm -f "$output_file"
+    rm -f "$output_file" "$err_file"
     return
   fi
 
@@ -656,20 +660,20 @@ STUB
     echo "FAILED (Expected no GITHUB_TOKEN in curl, but found one)"
     cat "$CURL_LOG"
     FAILED=1
-    rm -f "$output_file"
+    rm -f "$output_file" "$err_file"
     return
   fi
 
   echo "PASSED"
-  rm -f "$output_file"
+  rm -f "$output_file" "$err_file"
 }
 
-run_github_release_test_end_to_end "Successful release retrieval (no strip)" "tailscale/tailscale" "false" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "v1.2.3"
-run_github_release_test_end_to_end "Successful release retrieval (with strip_v)" "dani-garcia/vaultwarden" "true" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "1.2.3"
-run_github_release_test_end_to_end "Authenticated requests with GITHUB_TOKEN" "tailscale/tailscale" "false" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "true" "v1.2.3"
-run_github_release_test_end_to_end "Fallback to tags API" "tailscale/tailscale" "false" '{"tag_name": "null"}' '[{"name": "v2.0.0"}]' "false" "v2.0.0"
-run_github_release_test_end_to_end "Missing or invalid release data" "tailscale/tailscale" "false" '{"tag_name": "null"}' '[{"name": null}]' "false" ""
-
+run_github_release_test_end_to_end "Successful release retrieval (no strip)" "tailscale" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "v1.2.3"
+run_github_release_test_end_to_end "Successful release retrieval (with strip_v)" "vaultwarden" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "1.2.3"
+run_github_release_test_end_to_end "Authenticated requests with GITHUB_TOKEN" "tailscale" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "true" "v1.2.3"
+run_github_release_test_end_to_end "Fallback to tags API" "tailscale" '{"tag_name": "null"}' '[{"name": "v2.0.0"}]' "false" "v2.0.0"
+run_github_release_test_end_to_end "Missing or invalid release data" "tailscale" '{"tag_name": "null"}' '[{"name": null}]' "false" ""
+run_github_release_test_end_to_end "Curl exit error" "tailscale" '{"tag_name": "v1.2.3"}' '{"tag_name": "null"}' "false" "" "22"
 if [ "$FAILED" -ne 0 ]; then
   echo "Some tests failed."
   exit 1
