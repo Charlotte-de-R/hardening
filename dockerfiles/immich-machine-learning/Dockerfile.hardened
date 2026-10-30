@@ -70,6 +70,10 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
-# anyio を CVE-2026-63374 対策版へ更新 (旧バージョンdist-infoの残存防止とprefix指定)
-RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
-    pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
+# Keep the ML runtime's Python packages in its own virtual environment.
+# Pillow 13 fixes the tracked decoder issues and requires a supported Python runtime.
+RUN set -eu; \
+    PYTHON=/opt/venv/bin/python; \
+    if [ ! -x "$PYTHON" ]; then echo "ERROR: expected Immich ML venv Python at $PYTHON" >&2; exit 1; fi; \
+    "$PYTHON" -m pip install --upgrade --no-cache-dir "certifi>=2026.10.19" "Pillow>=13.0.0" "anyio>=4.14.2"; \
+    "$PYTHON" -c 'import certifi, PIL, anyio; from packaging.version import Version; assert Version(certifi.__version__) >= Version("2026.10.19"), certifi.__version__; assert Version(PIL.__version__) >= Version("13.0.0"), PIL.__version__; assert Version(anyio.__version__) >= Version("4.14.2"), anyio.__version__; print("Verified certifi", certifi.__version__, "Pillow", PIL.__version__, "anyio", anyio.__version__)'
