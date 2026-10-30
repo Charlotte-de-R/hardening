@@ -76,4 +76,4 @@ RUN set -eu; \
     PYTHON=/opt/venv/bin/python; \
     if [ ! -x "$PYTHON" ]; then echo "ERROR: expected Immich ML venv Python at $PYTHON" >&2; exit 1; fi; \
     "$PYTHON" -m pip install --upgrade --no-cache-dir "certifi>=2026.10.19" "Pillow>=13.0.0" "anyio>=4.14.2"; \
-    "$PYTHON" -c 'import certifi, PIL, anyio; from packaging.version import Version; assert Version(certifi.__version__) >= Version("2026.10.19"), certifi.__version__; assert Version(PIL.__version__) >= Version("13.0.0"), PIL.__version__; assert Version(anyio.__version__) >= Version("4.14.2"), anyio.__version__; print("Verified certifi", certifi.__version__, "Pillow", PIL.__version__, "anyio", anyio.__version__)'
+    "$PYTHON" -c 'from importlib.metadata import version; v=lambda name: tuple(int(part) for part in version(name).split(".")[:3]); assert v("certifi") >= (2026, 10, 19), version("certifi"); assert v("Pillow") >= (13, 0, 0), version("Pillow"); assert v("anyio") >= (4, 14, 2), version("anyio"); print("Verified certifi", version("certifi"), "Pillow", version("Pillow"), "anyio", version("anyio"))'
