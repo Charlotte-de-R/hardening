@@ -345,6 +345,21 @@ jobs:
           vuln-type: os,library
           scanners: vuln,misconfig,secret
 
+      - name: Log Trivy vulnerability table
+        id: trivy-table
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: ${{ steps.image.outputs.image }}
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          # Findings remain report-only; scanner execution failures still fail the job.
+          exit-code: '0'
+          ignore-unfixed: false
+          vuln-type: os,library
+          scanners: vuln,misconfig,secret
+
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
