@@ -36,19 +36,19 @@ RUN set -eu; \
     mkdir -p /tmp/patch && cd /tmp/patch && \
     npm init -y >/dev/null && \
     npm install --no-audit --no-fund --ignore-scripts lodash@4.17.21 && \
-    mapfile -d '' targets < <(find /app/public -type d -name lodash -prune -print0) && \
-    if [ "${#targets[@]}" -eq 0 ]; then \
+    find /app/public -type d -name lodash -prune -print > /tmp/lodash-targets && \
+    if [ ! -s /tmp/lodash-targets ]; then \
       echo "ERROR: no Portainer lodash directory found; refusing to claim the patch was applied" >&2; exit 1; \
     fi; \
-    for target in "${targets[@]}"; do \
+    while IFS= read -r target; do \
       case "$target" in /app/public/*) ;; *) echo "ERROR: unexpected lodash path: $target" >&2; exit 1 ;; esac; \
       if [ ! -d "$target" ] || [ -L "$target" ]; then echo "ERROR: invalid lodash target: $target" >&2; exit 1; fi; \
       echo "Replacing lodash directory: $target"; \
-      rm -rf -- "$target"; \
+      rm -rf "$target"; \
       cp -a /tmp/patch/node_modules/lodash "$target"; \
       node -e 'const p=require(process.argv[1]); if(p.version !== "4.17.21") process.exit(1)' "$target/package.json"; \
-    done; \
-    rm -rf /tmp/patch
+    done < /tmp/lodash-targets && \
+    rm -f /tmp/lodash-targets && rm -rf /tmp/patch
 
 ARG DOCKER_CLI_VERSION
 RUN curl -fsSLO "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" && \
