@@ -32,14 +32,24 @@ RUN apk add --no-cache curl nodejs npm
 
 COPY --from=base /public /app/public
 
-RUN mkdir -p /tmp/patch && cd /tmp/patch && \
-    npm init -y && \
-    npm install lodash@4.17.21 && \
-    find /app/public -type d -name "lodash" 2>/dev/null | while read -r target; do \
-      echo "Patching lodash at: $target"; \
-      rm -rf "$target"/* && \
-      cp -a /tmp/patch/node_modules/lodash/* "$target"/ || true; \
-    done
+RUN set -eu; \
+    mkdir -p /tmp/patch && cd /tmp/patch && \
+    npm init -y >/dev/null && \
+    npm install --no-audit --no-fund --ignore-scripts lodash@4.17.21 && \
+    find /app/public -type d -name lodash -prune -print > /tmp/lodash-targets && \
+    if [ ! -s /tmp/lodash-targets ]; then \
+      echo "WARNING: no standalone lodash directory found under /app/public; no filesystem replacement was applied. Trivy must determine whether a bundled dependency remains vulnerable." >&2; \
+    else \
+      while IFS= read -r target; do \
+        case "$target" in /app/public/*) ;; *) echo "ERROR: unexpected lodash path: $target" >&2; exit 1 ;; esac; \
+        if [ ! -d "$target" ] || [ -L "$target" ]; then echo "ERROR: invalid lodash target: $target" >&2; exit 1; fi; \
+        echo "Replacing lodash directory: $target"; \
+        rm -rf "$target"; \
+        cp -a /tmp/patch/node_modules/lodash "$target"; \
+        node -e 'const p=require(process.argv[1]); if(p.version !== "4.17.21") process.exit(1)' "$target/package.json"; \
+      done < /tmp/lodash-targets; \
+    fi; \
+    rm -f /tmp/lodash-targets && rm -rf /tmp/patch
 
 ARG DOCKER_CLI_VERSION
 RUN curl -fsSLO "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" && \

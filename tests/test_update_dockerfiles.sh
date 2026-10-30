@@ -109,7 +109,7 @@ run_test "Invalid Argument (-invalid)" 1 "Error: Invalid target '-invalid'. Targ
 run_test "Invalid Argument (--help)" 1 "Error: Invalid target '--help'. Target cannot start with a hyphen." --help
 
 # Test 3: Non-existent file
-run_test "Non-existent file" 0 "⚠️  File not found: dockerfiles/non-existent/Dockerfile.hardened (Skipping)" dockerfiles/non-existent/Dockerfile.hardened
+run_test "Non-existent file fails closed" 1 "ERROR: target Dockerfile not found: dockerfiles/non-existent/Dockerfile.hardened" dockerfiles/non-existent/Dockerfile.hardened
 
 # Test 4: Single file
 create_dockerfile "dockerfiles/single-test/Dockerfile.hardened" "$MOCK_DOCKERFILE_CONTENT"
@@ -150,7 +150,7 @@ MOCK
 )
 create_dockerfile "dockerfiles/no-tags/Dockerfile.hardened" "$MOCK_MISSING_TAGS"
 cp "dockerfiles/no-tags/Dockerfile.hardened" "dockerfiles/no-tags/Dockerfile.hardened.backup"
-run_test "Missing hardening tags" 0 "✅ Updated: dockerfiles/no-tags/Dockerfile.hardened" dockerfiles/no-tags/Dockerfile.hardened
+run_test "Missing hardening tags fail closed" 1 "ERROR: hardening markers are missing from target: dockerfiles/no-tags/Dockerfile.hardened" dockerfiles/no-tags/Dockerfile.hardened
 
 # Verify content of no-tags file (should remain exactly unchanged)
 if ! cmp -s "dockerfiles/no-tags/Dockerfile.hardened" "dockerfiles/no-tags/Dockerfile.hardened.backup"; then
