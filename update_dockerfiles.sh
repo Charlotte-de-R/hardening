@@ -37,9 +37,22 @@ update_file() {
         return 1
     fi
 
-    local starts ends
+    local starts ends normalized
+    normalized="${target_file#./}"
     starts="$(grep -Fc '# --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---' "$target_file" || true)"
     ends="$(grep -Fc '# --- COMMON HARDENING END ---' "$target_file" || true)"
+    if [[ "$starts" == "0" && "$ends" == "0" ]]; then
+        case "$normalized" in
+            dockerfiles/nextcloud/Dockerfile.hardened|dockerfiles/immich-server/Dockerfile.hardened|dockerfiles/crowdsec/Dockerfile.hardened|dockerfiles/cryptpad/Dockerfile.hardened|dockerfiles/portainer/Dockerfile.hardened)
+                echo "INFO: common template intentionally skipped for image-specific Dockerfile: $normalized"
+                return 0
+                ;;
+            *)
+                echo "ERROR: hardening markers are missing from non-exempt target: $target_file" >&2
+                return 1
+                ;;
+        esac
+    fi
     if [[ "$starts" != "1" || "$ends" != "1" ]]; then
         echo "ERROR: expected exactly one hardening marker pair in $target_file (start=$starts end=$ends)" >&2
         return 1
