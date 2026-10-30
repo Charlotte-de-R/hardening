@@ -70,10 +70,11 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
-# Keep the ML runtime's Python packages in its own virtual environment.
-# Pillow 13 fixes the tracked decoder issues and requires a supported Python runtime.
+# Immich ML v3.3.5 pins Pillow to >=12.2,<13 in machine-learning/pyproject.toml.
+# Do not override that upper bound: it can break the application's locked dependency graph.
+# Upgrade the independent security-sensitive packages and verify Pillow stays in the supported range.
 RUN set -eu; \
     PYTHON=/opt/venv/bin/python; \
     if [ ! -x "$PYTHON" ]; then echo "ERROR: expected Immich ML venv Python at $PYTHON" >&2; exit 1; fi; \
-    "$PYTHON" -m pip install --upgrade --no-cache-dir "certifi>=2026.10.19" "Pillow>=13.0.0" "anyio>=4.14.2"; \
-    "$PYTHON" -c 'from importlib.metadata import version; v=lambda name: tuple(int(part) for part in version(name).split(".")[:3]); assert v("certifi") >= (2026, 10, 19), version("certifi"); assert v("Pillow") >= (13, 0, 0), version("Pillow"); assert v("anyio") >= (4, 14, 2), version("anyio"); print("Verified certifi", version("certifi"), "Pillow", version("Pillow"), "anyio", version("anyio"))'
+    "$PYTHON" -m pip install --upgrade --no-cache-dir "certifi>=2026.10.19" "anyio>=4.14.2"; \
+    "$PYTHON" -c 'from importlib.metadata import version; v=lambda name: tuple(int(part) for part in version(name).split(".")[:3]); assert v("certifi") >= (2026, 10, 19), version("certifi"); assert v("anyio") >= (4, 14, 2), version("anyio"); pillow=v("Pillow"); assert (12, 2, 0) <= pillow < (13, 0, 0), version("Pillow"); print("Verified certifi", version("certifi"), "anyio", version("anyio"), "Pillow (upstream-compatible)", version("Pillow"))'
