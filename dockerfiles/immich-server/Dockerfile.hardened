@@ -127,7 +127,7 @@ RUN set -eu; \
     for p in /etc/ImageMagick-*/policy.xml; do \
       if [ -f "$p" ]; then \
         if ! grep -Eq 'domain="coder"[[:space:]]+rights="none"[[:space:]]+pattern="EXR"' "$p"; then \
-          sed -i '/<\/policymap>/i\  <policy domain="coder" rights="none" pattern="EXR" />' "$p"; \
+          sed -i '/<policymap>/a\  <policy domain="coder" rights="none" pattern="EXR" />' "$p"; \
         fi; \
         grep -Eq 'domain="coder"[[:space:]]+rights="none"[[:space:]]+pattern="EXR"' "$p" || { echo "ERROR: EXR deny policy missing in $p" >&2; exit 1; }; \
       fi; \
