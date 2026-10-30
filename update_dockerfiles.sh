@@ -12,6 +12,8 @@ if [[ ! -s "$TEMPLATE" ]]; then
 fi
 UNIVERSAL_SNIPPET="$(cat -- "$TEMPLATE")"
 
+echo "🔄 Injecting UNIVERSAL hardening templates..."
+
 ALL_TARGETS=(
     # Nextcloud excludes universal_hardening as sid upgrade breaks Apache (exit 137)
     # "dockerfiles/nextcloud/Dockerfile.hardened"
@@ -33,8 +35,13 @@ ALL_TARGETS=(
 update_file() {
     local target_file="$1"
     if [[ ! -f "$target_file" ]]; then
-        echo "ERROR: target Dockerfile not found: $target_file" >&2
-        return 1
+        local normalized_missing="${target_file#./}"
+        if [[ "$normalized_missing" == dockerfiles/* ]]; then
+            echo "ERROR: target Dockerfile not found: $target_file" >&2
+            return 1
+        fi
+        echo "⚠️  File not found: $target_file (Skipping)"
+        return 0
     fi
 
     local starts ends normalized
@@ -48,13 +55,13 @@ update_file() {
                 return 0
                 ;;
             *)
-                echo "ERROR: hardening markers are missing from non-exempt target: $target_file" >&2
+                echo "ERROR: hardening markers are missing from target: $target_file" >&2
                 return 1
                 ;;
         esac
     fi
-    if [[ "$starts" != "1" || "$ends" != "1" ]]; then
-        echo "ERROR: expected exactly one hardening marker pair in $target_file (start=$starts end=$ends)" >&2
+    if [[ "$starts" -lt 1 || "$starts" != "$ends" ]]; then
+        echo "ERROR: expected matching hardening marker pairs in $target_file (start=$starts end=$ends)" >&2
         return 1
     fi
 
@@ -64,9 +71,11 @@ update_file() {
         s/# --- COMMON HARDENING START \(DO NOT EDIT MANUALLY\) ---.*?# --- COMMON HARDENING END ---/$content/sg;
     ' "$target_file"
 
-    if grep -Fq '# --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---' "$target_file" &&
-       grep -Fq '# --- COMMON HARDENING END ---' "$target_file"; then
-        echo "Updated: $target_file"
+    local new_starts new_ends
+    new_starts="$(grep -Fc '# --- COMMON HARDENING START (DO NOT EDIT MANUALLY) ---' "$target_file" || true)"
+    new_ends="$(grep -Fc '# --- COMMON HARDENING END ---' "$target_file" || true)"
+    if [[ "$new_starts" == "$starts" && "$new_ends" == "$ends" ]]; then
+        echo "✅ Updated: $target_file"
     else
         echo "ERROR: hardening marker validation failed after update: $target_file" >&2
         return 1
@@ -76,7 +85,7 @@ update_file() {
 if [[ -n "${1:-}" ]]; then
     TARGET="$1"
     if [[ "$TARGET" == -* ]]; then
-        echo "ERROR: invalid target '$TARGET'" >&2
+        echo "Error: Invalid target '$TARGET'. Target cannot start with a hyphen." >&2
         exit 1
     fi
     if [[ -d "$TARGET" ]]; then
