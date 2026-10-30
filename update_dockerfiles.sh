@@ -57,7 +57,14 @@ if [ -n "${1:-}" ]; then
     if [ -d "$TARGET" ]; then
         TARGET="${TARGET%/}/Dockerfile.hardened"
     fi
-    TARGETS=("$TARGET")
+
+    if [[ "$TARGET" == *"nextcloud/Dockerfile.hardened"* ]]; then
+        echo "⚠️ Skipping Nextcloud as it is excluded from universal hardening."
+        TARGETS=()
+    else
+        TARGETS=("$TARGET")
+    fi
+
 else
     TARGETS=("${ALL_TARGETS[@]}")
 fi
