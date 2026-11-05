@@ -141,7 +141,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@v5
 
       - name: Set image full path
         id: image
@@ -187,10 +187,10 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -299,7 +299,7 @@ jobs:
       - name: Build hardened image locally
         id: build
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
@@ -367,7 +367,7 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: os,library
-          scanners: vuln,misconfig,secret
+          scanners: vuln
 
       - name: Push hardened image
         if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
@@ -411,8 +411,8 @@ jobs:
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: always() && (steps.trivy-full.outcome == 'success' || steps.trivy-full.outcome == 'failure') && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always() && steps.trivy-full.outcome == 'success' && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.name }}

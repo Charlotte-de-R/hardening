@@ -37,4 +37,9 @@ RUN for p in /etc/ImageMagick-*/policy.xml; do \
       fi; \
     done || true
 
+# Validate ImageMagick Policy functionality
+RUN if command -v identify >/dev/null 2>&1; then \
+      identify -list policy | grep -i "EXR" | grep -i "None" || (echo "⚠️ EXR is not functionally disabled in ImageMagick!" && exit 1); \
+    fi
+
 WORKDIR /var/www/html
