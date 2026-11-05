@@ -141,7 +141,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@v5
 
       - name: Set image full path
         id: image
@@ -187,10 +187,10 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -299,18 +299,18 @@ jobs:
       - name: Build and push hardened image
         id: build
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile.hardened
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
+          push: false
+          load: true
           tags: ${{ steps.image.outputs.image }}
           build-args: ${{ steps.build_args.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: ${{ github.event_name != 'pull_request' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
+          provenance: false
+          sbom: false
 
       - name: Verify built Nextcloud version
         if: matrix.name == 'nextcloud' && (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request')
@@ -340,32 +340,8 @@ jobs:
 
           echo "Verified Nextcloud version: $ACTUAL_VERSION"
 
-      - name: Sign image with Cosign
-        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
-        continue-on-error: true
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cosign sign --yes "$IMAGE"
-
-      - name: Verify image signature
-        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
-        continue-on-error: true
-        env:
-          IMAGE: ${{ steps.image.outputs.image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cosign verify "$IMAGE" \
-            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
-
-      - name: Run Trivy vulnerability scan
-        id: trivy
+      - name: Run Trivy vulnerability scan (Full SARIF)
+        id: trivy-full
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -379,9 +355,65 @@ jobs:
           vuln-type: os,library
           scanners: vuln,misconfig,secret
 
+      - name: Run Trivy vulnerability scan (Gate)
+        id: trivy
+        if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: ${{ steps.image.outputs.image }}
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          scanners: vuln
+
+      - name: Push image to registry
+        id: push
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker push "$IMAGE"
+          IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE")
+
+          if [[ -z "$IMAGE_DIGEST" || "$IMAGE_DIGEST" == "<no value>" ]]; then
+            echo "::error::Could not retrieve image digest after push"
+            exit 1
+          fi
+
+          echo "digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Pushed and retrieved digest: $IMAGE_DIGEST"
+
+      - name: Sign image with Cosign
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign sign --yes "${{ steps.push.outputs.digest }}"
+
+      - name: Verify image signature
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign verify "${{ steps.push.outputs.digest }}" \
+            --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+
       - name: Upload Trivy SARIF to GitHub Security
-        if: always() && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always() && steps.trivy-full.outcome == 'success' && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.name }}
