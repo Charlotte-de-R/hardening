@@ -296,7 +296,7 @@ jobs:
             echo "BUILD_ARGS_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push hardened image
+      - name: Build and load hardened image
         id: build
         if: steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true' || github.event_name == 'pull_request'
         uses: docker/build-push-action@v7

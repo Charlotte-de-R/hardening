@@ -74,5 +74,5 @@ RUN echo "Cache bust: $CACHEBUST" && \
 RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
     pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
 
-# CVEs in certifi
-RUN /opt/venv/bin/python -m pip install --no-cache-dir --upgrade "certifi>=2026.10.18"
+# pip 脆弱性対応 (CVEs in certifi) - immich-machine-learning
+RUN pip install --prefix=/opt/venv --no-cache-dir "certifi>=2026.10.18"
