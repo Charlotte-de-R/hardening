@@ -75,7 +75,14 @@ RUN echo "Cache bust: $CACHEBUST" && \
 RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
     pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
 
+# Upgrade vulnerable Python libraries. Remove only the stale Pillow
+# distribution metadata discovered in the runtime site-packages; retain the
+# installed package files and let pip replace/normalize the distribution.
 RUN pip install --prefix=/opt/venv --upgrade --no-cache-dir \
         "Pillow>=13.0.0" \
         "certifi>=2026.10.23" && \
-    python -c 'import sys, certifi; from PIL import Image; from importlib.metadata import version; print("Python:", sys.executable); print("Pillow import:", Image.__version__); print("Pillow metadata:", version("Pillow")); print("certifi:", certifi.__version__); print("CA bundle:", certifi.where()); assert tuple(map(int, Image.__version__.split(".")[:2])) >= (13, 0); assert version("certifi") >= "2026.10.23"'
+    find /opt/venv/lib/python*/site-packages -maxdepth 1 -type d \
+        \( -name 'Pillow-*.dist-info' -o -name 'pillow-*.dist-info' \) \
+        ! -name 'Pillow-13.0.0.dist-info' ! -name 'pillow-13.0.0.dist-info' \
+        -exec rm -rf {} + && \
+    python -c 'import sys, certifi; from PIL import Image; from importlib.metadata import version; print("Python:", sys.executable); print("Pillow import:", Image.__version__); print("Pillow metadata:", version("Pillow")); print("certifi:", certifi.__version__); print("CA bundle:", certifi.where()); assert tuple(map(int, Image.__version__.split(".")[:2])) >= (13, 0); assert version("Pillow") == Image.__version__; assert version("certifi") >= "2026.10.23"'
