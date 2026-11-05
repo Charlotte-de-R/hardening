@@ -382,7 +382,6 @@ jobs:
 
       - name: Sign image with Cosign
         if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
-        continue-on-error: true
         env:
           IMAGE: ${{ steps.image.outputs.image }}
         shell: bash
@@ -397,7 +396,6 @@ jobs:
 
       - name: Verify image signature
         if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
-        continue-on-error: true
         env:
           IMAGE: ${{ steps.image.outputs.image }}
         shell: bash
