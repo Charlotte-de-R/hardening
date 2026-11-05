@@ -102,10 +102,10 @@ RUN echo "Cache bust: $CACHEBUST" && \
 
 # anyio を CVE-2026-63374 対策版へ更新 (旧バージョンdist-infoの残存防止とprefix指定)
 RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
-    python3 -m pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
+    /opt/venv/bin/python3 -m pip install --no-cache-dir "anyio>=4.14.2"
 
 # Update certifi and Pillow in the virtual environment
-RUN python3 -m pip install --prefix=/opt/venv --no-cache-dir "certifi>=2026.10.19" "Pillow>=13.0.0"
+RUN /opt/venv/bin/python3 -m pip install --no-cache-dir "certifi>=2026.10.19" "Pillow>=13.0.0"
 
 # Verify packages in the virtual environment
 RUN /opt/venv/bin/python3 -m pip --version && \
