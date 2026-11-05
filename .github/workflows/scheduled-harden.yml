@@ -189,16 +189,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
-
       - name: Check for updates
         id: update
         env:
@@ -369,6 +359,14 @@ jobs:
           vuln-type: os,library
           scanners: vuln
 
+      - name: Log in to GitHub Container Registry
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push hardened image
         if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
         shell: bash
@@ -377,6 +375,10 @@ jobs:
         run: |
           set -euo pipefail
           docker push "$IMAGE"
+
+      - name: Install Cosign
+        if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Sign image with Cosign
         if: (steps.update.outputs.needs_update == 'true' || env.FORCE_BUILD == 'true') && github.event_name != 'pull_request'
