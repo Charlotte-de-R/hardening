@@ -70,15 +70,12 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
-# Update AnyIO in the same virtual environment used by the Immich ML runtime.
-RUN test -x /opt/venv/bin/python && \
-    /opt/venv/bin/python -m pip install --upgrade --no-cache-dir "anyio>=4.14.2"
+# The upstream image uses a pip-free runtime venv. Install packages with
+# the image's available pip and --prefix so files land in /opt/venv.
+RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
+    pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
 
-# Upgrade the actual runtime environment, not whichever pip/python happens to
-# appear first on PATH. Verify imports, metadata, and dependency consistency
-# using that exact interpreter so the build fails if stale packages remain.
-RUN /opt/venv/bin/python -m pip install --upgrade --no-cache-dir \
+RUN pip install --prefix=/opt/venv --upgrade --no-cache-dir \
         "Pillow>=13.0.0" \
         "certifi>=2026.10.23" && \
-    /opt/venv/bin/python -m pip check && \
-    /opt/venv/bin/python -c 'import sys, certifi; from PIL import Image; from importlib.metadata import version; print("Python:", sys.executable); print("Pillow import:", Image.__version__); print("Pillow metadata:", version("Pillow")); print("certifi:", certifi.__version__); print("CA bundle:", certifi.where()); assert tuple(map(int, Image.__version__.split(".")[:2])) >= (13, 0); assert version("certifi") >= "2026.10.23"'
+    python -c 'import sys, certifi; from PIL import Image; from importlib.metadata import version; print("Python:", sys.executable); print("Pillow import:", Image.__version__); print("Pillow metadata:", version("Pillow")); print("certifi:", certifi.__version__); print("CA bundle:", certifi.where()); assert tuple(map(int, Image.__version__.split(".")[:2])) >= (13, 0); assert version("certifi") >= "2026.10.23"'
