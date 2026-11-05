@@ -411,7 +411,7 @@ jobs:
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: always() && (steps.trivy.outcome == 'success' || steps.trivy.outcome == 'failure') && hashFiles('trivy-results.sarif') != ''
+        if: always() && (steps.trivy-full.outcome == 'success' || steps.trivy-full.outcome == 'failure') && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-results.sarif

@@ -16,17 +16,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 # =========================
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
-    apt-get install -y --no-install-recommends \
+    (apt-get install -y --no-install-recommends --only-upgrade \
         libexpat1 \
         libxml2 \
-        libopenexr-dev \
         libopenexr31 \
         zlib1g \
         libsqlite3-0 \
         openssl \
         libglib2.0-0 \
         perl \
-        perl-base && \
+        perl-base || true) && \
     apt-get purge -y \
         perl-modules || true && \
     apt-get autoremove -y && \
@@ -128,6 +127,10 @@ console.log('All handlebars instances validated successfully.');"
 RUN for p in /etc/ImageMagick-*/policy.xml; do \
       if [ -f "$p" ] && ! grep -q 'pattern="EXR"' "$p"; then \
         sed -i '/<policymap>/a\  <policy domain="coder" rights="none" pattern="EXR" />' "$p"; \
+      fi; \
+      if [ -f "$p" ] && ! grep -q 'rights="none" pattern="EXR"' "$p"; then \
+        echo "⚠️ ImageMagick EXR policy not successfully applied in $p"; \
+        exit 1; \
       fi; \
     done || true
 

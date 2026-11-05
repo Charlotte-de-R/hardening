@@ -32,7 +32,8 @@ RUN echo "Cache bust: $CACHEBUST" && \
         (apk upgrade --no-cache || echo "⚠️ apk upgrade failed") && \
         for pkg in zlib sqlite-libs libcrypto3 libssl3; do \
             if apk add --no-cache --upgrade "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
-                echo "✅ Successfully upgraded $pkg"; \
+                echo "✅ Successfully upgraded $pkg:"; \
+                cat /tmp/pkg_out || true; \
             else \
                 echo "⚠️ Failed to upgrade $pkg. Error:"; \
                 cat /tmp/pkg_err || true; \
@@ -48,7 +49,8 @@ RUN echo "Cache bust: $CACHEBUST" && \
         echo "🔒 Installing critical security updates..." && \
         for pkg in libc6 zlib1g libsqlite3-0 openssl ca-certificates; do \
             if apt-get install -y --no-install-recommends --only-upgrade "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
-                echo "✅ Successfully upgraded $pkg"; \
+                echo "✅ Successfully upgraded $pkg:"; \
+                cat /tmp/pkg_out || true; \
             else \
                 echo "⚠️ Failed to upgrade $pkg. Error:"; \
                 cat /tmp/pkg_err || true; \
@@ -65,14 +67,16 @@ RUN echo "Cache bust: $CACHEBUST" && \
         for pkg in tar glob systeminformation; do \
             if [ -d /usr/src/app ] && [ -f /usr/src/app/package.json ]; then \
                 if cd /usr/src/app && npm update "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
-                    echo "✅ Successfully updated npm package $pkg"; \
+                    echo "✅ Successfully updated npm package $pkg:"; \
+                    cat /tmp/pkg_out || true; \
                 else \
                     echo "⚠️ Failed to update npm package $pkg. Error:"; \
                     cat /tmp/pkg_err || true; \
                 fi; \
             else \
                 if npm install -g "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
-                    echo "✅ Successfully updated npm package $pkg"; \
+                    echo "✅ Successfully updated npm package $pkg:"; \
+                    cat /tmp/pkg_out || true; \
                 else \
                     echo "⚠️ Failed to update npm package $pkg. Error:"; \
                     cat /tmp/pkg_err || true; \
@@ -84,7 +88,8 @@ RUN echo "Cache bust: $CACHEBUST" && \
         PIP_CMD=$(command -v pip || command -v pip3); \
         for pkg in wheel urllib3 python-multipart jaraco.context; do \
             if $PIP_CMD install --upgrade --no-cache-dir "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
-                echo "✅ Successfully updated pip package $pkg"; \
+                echo "✅ Successfully updated pip package $pkg:"; \
+                cat /tmp/pkg_out || true; \
             else \
                 echo "⚠️ Failed to update pip package $pkg. Error:"; \
                 cat /tmp/pkg_err || true; \
