@@ -13,9 +13,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # --- 最小限のみ（絶対安全ライン） ---
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+    (apt-get install -y --no-install-recommends --only-upgrade \
         ca-certificates \
-        tzdata && \
+        tzdata \
+        libopenexr31 \
+        libxml2 \
+        linux-libc-dev || true) && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -28,6 +31,15 @@ RUN for p in /etc/ImageMagick-*/policy.xml; do \
       if [ -f "$p" ] && ! grep -q 'pattern="EXR"' "$p"; then \
         sed -i '/<policymap>/a\  <policy domain="coder" rights="none" pattern="EXR" />' "$p"; \
       fi; \
+      if [ -f "$p" ] && ! grep -q 'rights="none" pattern="EXR"' "$p"; then \
+        echo "⚠️ ImageMagick EXR policy not successfully applied in $p"; \
+        exit 1; \
+      fi; \
     done || true
+
+# Validate ImageMagick Policy functionality
+RUN if command -v identify >/dev/null 2>&1; then \
+      identify -list policy | grep -i "EXR" | grep -i "None" || (echo "⚠️ EXR is not functionally disabled in ImageMagick!" && exit 1); \
+    fi
 
 WORKDIR /var/www/html

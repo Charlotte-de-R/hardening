@@ -16,15 +16,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 # =========================
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
-    apt-get install -y --no-install-recommends \
+    (apt-get install -y --no-install-recommends --only-upgrade \
         libexpat1 \
         libxml2 \
+        libopenexr31 \
         zlib1g \
         libsqlite3-0 \
         openssl \
         libglib2.0-0 \
         perl \
-        perl-base && \
+        perl-base || true) && \
     apt-get purge -y \
         perl-modules || true && \
     apt-get autoremove -y && \
@@ -59,6 +60,50 @@ RUN mkdir -p /tmp/patch-proxy && cd /tmp/patch-proxy && \
         rm -rf "$dir" && cp -a /tmp/patch-proxy/node_modules/proxy-addr "$dir"; \
     done < /tmp/proxy_dirs.txt && \
     rm -rf /tmp/patch-proxy /tmp/proxy_dirs.txt
+
+# ★ tar を 7.5.19 に外科的置換 (CVE-2026-59873 対策)
+RUN mkdir -p /tmp/patch-tar && cd /tmp/patch-tar && \
+    npm init -y && \
+    npm install tar@7.5.19 && \
+    find /usr/src/app/server/node_modules -type d -name "tar" -prune > /tmp/tar_dirs.txt && \
+    COUNT=$(wc -l < /tmp/tar_dirs.txt) && \
+    echo "Found $COUNT tar instance(s) to patch." && \
+    if [ "$COUNT" -eq 0 ]; then echo "Error: No tar instance found to patch."; exit 1; fi && \
+    while IFS= read -r dir; do \
+        echo "Patching: $dir"; \
+        rm -rf "$dir" && cp -a /tmp/patch-tar/node_modules/tar "$dir"; \
+    done < /tmp/tar_dirs.txt && \
+    rm -rf /tmp/patch-tar /tmp/tar_dirs.txt
+
+# tar バージョン検証（pnpm 配下の全インスタンス）
+RUN node -e "\
+const fs = require('fs');\
+const path = require('path');\
+const root = '/usr/src/app/server/node_modules';\
+const found = [];\
+function walk(dir) {\
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {\
+    if (entry.isSymbolicLink() || !entry.isDirectory()) continue;\
+    const full = path.join(dir, entry.name);\
+    if (entry.name === 'tar' && fs.existsSync(path.join(full, 'package.json'))) {\
+      const pkg = JSON.parse(fs.readFileSync(path.join(full, 'package.json'), 'utf8'));\
+      if (pkg.name === 'tar') found.push({ path: full, version: pkg.version });\
+    } else {\
+      walk(full);\
+    }\
+  }\
+}\
+walk(root);\
+if (found.length === 0) { console.error('No tar packages found.'); process.exit(1); }\
+for (const item of found) {\
+  const v = item.version.split('.').map(Number);\
+  if (v[0] < 7 || (v[0] === 7 && v[1] < 5) || (v[0] === 7 && v[1] === 5 && v[2] < 19)) {\
+    console.error('Vulnerable tar version remains:', item.version, item.path);\
+    process.exit(1);\
+  }\
+  console.log('Verified tar', item.version, 'at', item.path);\
+}\
+console.log('All tar instances are at least 7.5.19.');"
 
 # ★ handlebars を 4.7.10 に外科的置換 (動的検出)
 RUN mkdir -p /tmp/patch-handlebars && cd /tmp/patch-handlebars && \
@@ -127,7 +172,16 @@ RUN for p in /etc/ImageMagick-*/policy.xml; do \
       if [ -f "$p" ] && ! grep -q 'pattern="EXR"' "$p"; then \
         sed -i '/<policymap>/a\  <policy domain="coder" rights="none" pattern="EXR" />' "$p"; \
       fi; \
+      if [ -f "$p" ] && ! grep -q 'rights="none" pattern="EXR"' "$p"; then \
+        echo "⚠️ ImageMagick EXR policy not successfully applied in $p"; \
+        exit 1; \
+      fi; \
     done || true
+
+# Validate ImageMagick Policy functionality
+RUN if command -v identify >/dev/null 2>&1; then \
+      identify -list policy | grep -i "EXR" | grep -i "None" || (echo "⚠️ EXR is not functionally disabled in ImageMagick!" && exit 1); \
+    fi
 
 # =========================
 # Hardening Strategy 3: 権限昇格遮断

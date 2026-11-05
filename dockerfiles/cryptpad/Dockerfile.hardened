@@ -18,10 +18,19 @@ RUN set -eu; \
         rm -rf /var/cache/apk/*; \
     elif command -v apt-get >/dev/null 2>&1; then \
         export DEBIAN_FRONTEND=noninteractive; \
-        apt-get update -o Acquire::Retries=3 && \
-        apt-get upgrade -y -o Acquire::Retries=3 && \
+        (apt-get update -o Acquire::Retries=3 || echo "⚠️ apt-get update failed") && \
+        (apt-get upgrade -y -o Acquire::Retries=3 || echo "⚠️ apt-get upgrade failed") && \
+        for pkg in zlib1g minizip libexpat1; do \
+            if apt-get install -y --no-install-recommends "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
+                echo "✅ Successfully upgraded $pkg:"; \
+                cat /tmp/pkg_out || true; \
+            else \
+                echo "⚠️ Failed to upgrade $pkg. Error:"; \
+                cat /tmp/pkg_err || true; \
+            fi; \
+        done && \
         apt-get clean && \
-        rm -rf /var/lib/apt/lists/*; \
+        rm -rf /var/lib/apt/lists/* /tmp/pkg_*; \
     else \
         echo "ERROR: No supported package manager found in CryptPad base image." >&2; \
         exit 1; \

@@ -36,41 +36,71 @@ RUN echo "Cache bust: $CACHEBUST" && \
         echo "⛰️ Alpine Linux detected" && \
         (apk update || echo "⚠️ apk update failed") && \
         (apk upgrade --no-cache || echo "⚠️ apk upgrade failed") && \
-        (apk add --no-cache --upgrade zlib sqlite-libs libcrypto3 libssl3 || echo "⚠️ Library upgrade failed") && \
+        for pkg in zlib sqlite-libs libcrypto3 libssl3; do \
+            if apk add --no-cache --upgrade "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
+                echo "✅ Successfully upgraded $pkg:"; \
+                cat /tmp/pkg_out || true; \
+            else \
+                echo "⚠️ Failed to upgrade $pkg. Error:"; \
+                cat /tmp/pkg_err || true; \
+            fi; \
+        done && \
         (apk del --no-cache nano vim git || true) && \
-        rm -rf /var/cache/apk/* /usr/share/man/* || true; \
+        rm -rf /var/cache/apk/* /usr/share/man/* /tmp/pkg_* || true; \
     elif command -v apt-get >/dev/null 2>&1; then \
         echo "🌀 Debian/Ubuntu detected" && \
         export DEBIAN_FRONTEND=noninteractive && \
         (apt-get update -o Acquire::Retries=3 || echo "⚠️ apt-get update failed") && \
         (apt-get upgrade -y -o Acquire::Retries=3 || echo "⚠️ apt-get upgrade failed") && \
-        echo "🔒 Installing critical security updates from Debian sid..." && \
-        (echo "deb http://deb.debian.org/debian sid main" > /etc/apt/sources.list.d/sid.list && \
-         apt-get update -o Acquire::Retries=3 || echo "⚠️ sid update failed") && \
-        (apt-get install -y --no-install-recommends -t sid \
-            libc6 \
-            zlib1g \
-            libsqlite3-0 \
-            openssl \
-            ca-certificates 2>/dev/null || \
-         echo "⚠️ sid packages failed, using default versions") && \
+        echo "🔒 Installing critical security updates..." && \
+        for pkg in libc6 zlib1g libsqlite3-0 openssl ca-certificates; do \
+            if apt-get install -y --no-install-recommends --only-upgrade "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
+                echo "✅ Successfully upgraded $pkg:"; \
+                cat /tmp/pkg_out || true; \
+            else \
+                echo "⚠️ Failed to upgrade $pkg. Error:"; \
+                cat /tmp/pkg_err || true; \
+            fi; \
+        done && \
         (apt-get purge -y --auto-remove vim nano git telnet ftp man-db doc-debian 2>/dev/null || true) && \
         apt-get clean && \
-        rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/* /etc/apt/sources.list.d/sid.list || true; \
+        rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /usr/share/man/* || true; \
     else \
         echo "⚠️ No supported package manager. Skipping." && true; \
     fi && \
     echo "📦 Upgrading Language Packages for Vulnerability Remediation..." && \
     (if command -v npm >/dev/null 2>&1; then \
-        if [ -d /usr/src/app ] && [ -f /usr/src/app/package.json ]; then \
-            cd /usr/src/app && npm update tar glob systeminformation || true; \
-        else \
-            npm install -g tar glob systeminformation || true; \
-        fi; \
+        for pkg in tar glob systeminformation; do \
+            if [ -d /usr/src/app ] && [ -f /usr/src/app/package.json ]; then \
+                if cd /usr/src/app && npm update "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
+                    echo "✅ Successfully updated npm package $pkg:"; \
+                    cat /tmp/pkg_out || true; \
+                else \
+                    echo "⚠️ Failed to update npm package $pkg. Error:"; \
+                    cat /tmp/pkg_err || true; \
+                fi; \
+            else \
+                if npm install -g "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
+                    echo "✅ Successfully updated npm package $pkg:"; \
+                    cat /tmp/pkg_out || true; \
+                else \
+                    echo "⚠️ Failed to update npm package $pkg. Error:"; \
+                    cat /tmp/pkg_err || true; \
+                fi; \
+            fi; \
+        done; \
     fi) && \
     (if command -v pip >/dev/null 2>&1 || command -v pip3 >/dev/null 2>&1; then \
         PIP_CMD=$(command -v pip || command -v pip3); \
-        $PIP_CMD install --upgrade --no-cache-dir wheel urllib3 python-multipart jaraco.context || true; \
+        for pkg in wheel urllib3 python-multipart jaraco.context; do \
+            if $PIP_CMD install --upgrade --no-cache-dir "$pkg" > /tmp/pkg_out 2> /tmp/pkg_err; then \
+                echo "✅ Successfully updated pip package $pkg:"; \
+                cat /tmp/pkg_out || true; \
+            else \
+                echo "⚠️ Failed to update pip package $pkg. Error:"; \
+                cat /tmp/pkg_err || true; \
+            fi; \
+        done; \
     fi) && \
     echo "🧹 Optimizing Docker layers for Trivy scanning..." && \
     (find /var/lib/dpkg -type f -name "*-old" -delete 2>/dev/null || true) && \
