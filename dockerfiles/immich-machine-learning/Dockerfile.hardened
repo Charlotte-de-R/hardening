@@ -108,4 +108,4 @@ RUN uv pip install --python /opt/venv/bin/python --no-cache --reinstall "anyio>=
 
 # Verify packages in the virtual environment
 RUN /opt/venv/bin/python -c "import sys; print('Executable:', sys.executable); print('Prefix:', sys.prefix)" && \
-    /opt/venv/bin/python -c "import anyio, certifi, PIL; print('anyio:', anyio.__version__, 'certifi:', certifi.__version__, 'Pillow:', PIL.__version__)"
+    /opt/venv/bin/python -c "import importlib.metadata; print('anyio:', importlib.metadata.version('anyio'), 'certifi:', importlib.metadata.version('certifi'), 'Pillow:', importlib.metadata.version('Pillow'))"
