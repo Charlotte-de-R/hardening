@@ -79,7 +79,9 @@ RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
 # Validate that exactly one Pillow distribution record remains and matches
 # the module imported by Immich ML's runtime Python.
 RUN rm -rf /opt/venv/lib/python*/site-packages/Pillow-*.dist-info \
-           /opt/venv/lib/python*/site-packages/pillow-*.dist-info && \
+           /opt/venv/lib/python*/site-packages/pillow-*.dist-info \
+           /opt/venv/lib/python*/site-packages/certifi-*.dist-info \
+           /opt/venv/lib/python*/site-packages/certifi-*.egg-info && \
     pip install --prefix=/opt/venv --no-cache-dir --force-reinstall \
         "Pillow>=13.0.0" \
         "certifi>=2026.10.23" && \
