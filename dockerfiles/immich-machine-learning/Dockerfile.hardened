@@ -70,17 +70,15 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
-# anyio を CVE-2026-63374 対策版へ更新 (旧バージョンdist-infoの残存防止とprefix指定)
-RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
-    pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
+# Update AnyIO in the same virtual environment used by the Immich ML runtime.
+RUN test -x /opt/venv/bin/python && \
+    /opt/venv/bin/python -m pip install --upgrade --no-cache-dir "anyio>=4.14.2"
 
-# Pillow and certifi are application-level Python dependencies; OS ca-certificates
-# does not update certifi. Upgrade them in the Immich ML virtual environment.
-# Keep the minimum versions explicit and fail the build if dependency metadata
-# becomes inconsistent or the runtime imports do not resolve to the upgraded packages.
-RUN PIP_CMD="$(command -v pip || command -v pip3)" && \
-    "$PIP_CMD" install --upgrade --no-cache-dir \
+# Upgrade the actual runtime environment, not whichever pip/python happens to
+# appear first on PATH. Verify imports, metadata, and dependency consistency
+# using that exact interpreter so the build fails if stale packages remain.
+RUN /opt/venv/bin/python -m pip install --upgrade --no-cache-dir \
         "Pillow>=13.0.0" \
         "certifi>=2026.10.23" && \
-    "$PIP_CMD" check && \
-    python -c "import certifi; from PIL import Image; print('Pillow:', Image.__version__); print('certifi:', certifi.__version__); print('CA bundle:', certifi.where())"
+    /opt/venv/bin/python -m pip check && \
+    /opt/venv/bin/python -c 'import sys, certifi; from PIL import Image; from importlib.metadata import version; print("Python:", sys.executable); print("Pillow import:", Image.__version__); print("Pillow metadata:", version("Pillow")); print("certifi:", certifi.__version__); print("CA bundle:", certifi.where()); assert tuple(map(int, Image.__version__.split(".")[:2])) >= (13, 0); assert version("certifi") >= "2026.10.23"'
