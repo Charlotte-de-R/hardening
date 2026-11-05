@@ -19,6 +19,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libexpat1 \
         libxml2 \
+        libopenexr-dev \
+        libopenexr31 \
         zlib1g \
         libsqlite3-0 \
         openssl \

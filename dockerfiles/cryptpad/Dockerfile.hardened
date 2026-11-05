@@ -20,6 +20,7 @@ RUN set -eu; \
         export DEBIAN_FRONTEND=noninteractive; \
         apt-get update -o Acquire::Retries=3 && \
         apt-get upgrade -y -o Acquire::Retries=3 && \
+        apt-get install -y --no-install-recommends zlib1g minizip libexpat1 || echo "⚠️ Library upgrade failed" && \
         apt-get clean && \
         rm -rf /var/lib/apt/lists/*; \
     else \
