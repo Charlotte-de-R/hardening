@@ -76,6 +76,10 @@ RUN mkdir -p /tmp/patch-handlebars && cd /tmp/patch-handlebars && \
     done < /tmp/handlebars_dirs.txt && \
     rm -rf /tmp/patch-handlebars /tmp/handlebars_dirs.txt
 
+
+# ★ tar を 7.5.19 (CVE-2026-59873 対策) に外科的置換
+RUN mkdir -p /tmp/patch-tar && cd /tmp/patch-tar &&     npm init -y &&     npm install tar@7.5.19 &&     find /usr/src/app/server/node_modules -type d -name "tar" -prune > /tmp/tar_dirs.txt &&     COUNT=$(wc -l < /tmp/tar_dirs.txt) &&     if [ "$COUNT" -eq 0 ]; then echo "Error: No tar instance found to patch."; exit 1; fi &&     while IFS= read -r dir; do         rm -rf "$dir" && cp -a /tmp/patch-tar/node_modules/tar "$dir";     done < /tmp/tar_dirs.txt &&     rm -rf /tmp/patch-tar /tmp/tar_dirs.txt
+
 # handlebars バージョン検証
 RUN node -e "\
 const fs = require('fs');\

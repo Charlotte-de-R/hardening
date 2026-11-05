@@ -70,6 +70,13 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
-# anyio を CVE-2026-63374 対策版へ更新 (旧バージョンdist-infoの残存防止とprefix指定)
+
+# CVE-2026-63374, CVE-2026-112393, GHSA-6q48-6c7w-9gw2: update anyio, pillow, certifi
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
-    pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
+    if [ ! -f /opt/venv/bin/pip ]; then \
+      uv pip install --python /opt/venv/bin/python --no-cache "anyio>=4.14.2" "certifi>=2026.10.18" "pillow>=13.0.0"; \
+    else \
+      /opt/venv/bin/python -m pip install --no-cache-dir --upgrade "anyio>=4.14.2" "certifi>=2026.10.18" "pillow>=13.0.0"; \
+    fi && \
+    /opt/venv/bin/python -c "import importlib.metadata; print(importlib.metadata.version('anyio')); print(importlib.metadata.version('certifi')); print(importlib.metadata.version('pillow'))"
