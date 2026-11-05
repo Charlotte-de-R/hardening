@@ -100,14 +100,12 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
-# anyio を CVE-2026-63374 対策版へ更新 (旧バージョンdist-infoの残存防止とprefix指定)
-RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
-    /opt/venv/bin/python3 -m pip install --no-cache-dir "anyio>=4.14.2"
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /uvx /bin/
 
-# Update certifi and Pillow in the virtual environment
-RUN /opt/venv/bin/python3 -m pip install --no-cache-dir "certifi>=2026.10.19" "Pillow>=13.0.0"
+# Update Python packages using uv
+RUN uv pip install --python /opt/venv/bin/python --no-cache --reinstall "anyio>=4.14.2" "certifi>=2026.10.19" "Pillow>=13.0.0"
 
 # Verify packages in the virtual environment
-RUN /opt/venv/bin/python3 -m pip --version && \
-    /opt/venv/bin/python3 -m pip show anyio certifi Pillow && \
-    /opt/venv/bin/python3 -c "import anyio, certifi, PIL; print('anyio:', anyio.__version__, 'certifi:', certifi.__version__, 'Pillow:', PIL.__version__)"
+RUN /opt/venv/bin/python -c "import sys; print('Executable:', sys.executable); print('Prefix:', sys.prefix)" && \
+    /opt/venv/bin/python -c "import anyio, certifi, PIL; print('anyio:', anyio.__version__, 'certifi:', certifi.__version__, 'Pillow:', PIL.__version__)"
