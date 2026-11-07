@@ -45,15 +45,31 @@ RUN echo "Cache bust: $CACHEBUST" && \
     fi && \
     echo "📦 Upgrading Language Packages for Vulnerability Remediation..." && \
     (if command -v npm >/dev/null 2>&1; then \
-        if [ -d /usr/src/app ] && [ -f /usr/src/app/package.json ]; then \
-            cd /usr/src/app && npm update tar glob systeminformation || true; \
-        else \
-            npm install -g tar glob systeminformation || true; \
-        fi; \
+        for pkg in tar glob systeminformation; do \
+            if [ -d /usr/src/app ] && [ -f /usr/src/app/package.json ]; then \
+                if (cd /usr/src/app && npm update "$pkg"); then \
+                    echo "✅ Successfully updated NPM package (local): $pkg"; \
+                else \
+                    echo "⚠️ Failed to update NPM package (local): $pkg"; \
+                fi; \
+            else \
+                if npm install -g "$pkg"; then \
+                    echo "✅ Successfully updated NPM package (global): $pkg"; \
+                else \
+                    echo "⚠️ Failed to update NPM package (global): $pkg"; \
+                fi; \
+            fi; \
+        done; \
     fi) && \
     (if command -v pip >/dev/null 2>&1 || command -v pip3 >/dev/null 2>&1; then \
         PIP_CMD=$(command -v pip || command -v pip3); \
-        $PIP_CMD install --upgrade --no-cache-dir wheel urllib3 python-multipart jaraco.context || true; \
+        for pkg in wheel urllib3 python-multipart jaraco.context certifi; do \
+            if $PIP_CMD install --upgrade --no-cache-dir "$pkg"; then \
+                echo "✅ Successfully updated Python package: $pkg"; \
+            else \
+                echo "⚠️ Failed to update Python package: $pkg"; \
+            fi; \
+        done; \
     fi) && \
     echo "🧹 Optimizing Docker layers for Trivy scanning..." && \
     (find /var/lib/dpkg -type f -name "*-old" -delete 2>/dev/null || true) && \
