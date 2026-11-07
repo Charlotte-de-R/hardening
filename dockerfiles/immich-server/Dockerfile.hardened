@@ -48,6 +48,18 @@ RUN mkdir -p /tmp/patch && \
     done < /tmp/protobufjs_dirs.txt && \
     rm -rf /tmp/patch /tmp/protobufjs_dirs.txt
 
+# ★ tar を 7.5.19 (CVE-2026-59873 対策) に外科的置換
+RUN mkdir -p /tmp/patch-tar && cd /tmp/patch-tar && \
+    npm init -y && \
+    npm install tar@7.5.19 && \
+    find /usr/src/app/server/node_modules -type d -name "tar" -prune > /tmp/tar_dirs.txt && \
+    COUNT=$(wc -l < /tmp/tar_dirs.txt) && \
+    if [ "$COUNT" -eq 0 ]; then echo "Error: No tar instance found to patch."; exit 1; fi && \
+    while IFS= read -r dir; do \
+        rm -rf "$dir" && cp -a /tmp/patch-tar/node_modules/tar "$dir"; \
+    done < /tmp/tar_dirs.txt && \
+    rm -rf /tmp/patch-tar /tmp/tar_dirs.txt
+
 # ★ proxy-addr を 2.0.8 (CVE-2026-90711 対策) に外科的置換
 RUN mkdir -p /tmp/patch-proxy && cd /tmp/patch-proxy && \
     npm init -y && \

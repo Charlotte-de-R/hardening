@@ -8,6 +8,7 @@ RUN apk add --no-cache git && \
     CGO_ENABLED=0 go install github.com/tianon/gosu@latest
 
 FROM ghcr.io/immich-app/immich-machine-learning:${APP_VERSION}
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 USER root
 
 ARG APP_VERSION
@@ -73,7 +74,7 @@ RUN echo "Cache bust: $CACHEBUST" && \
 # The upstream image uses a pip-free runtime venv. Install packages with
 # the image's available pip and --prefix so files land in /opt/venv.
 RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
-    pip install --prefix=/opt/venv --no-cache-dir "anyio>=4.14.2"
+    VIRTUAL_ENV=/opt/venv uv pip install "anyio>=4.14.2"
 
 # Remove obsolete Pillow metadata and force a clean package installation.
 # Validate that exactly one Pillow distribution record remains and matches
@@ -82,7 +83,7 @@ RUN rm -rf /opt/venv/lib/python*/site-packages/Pillow-*.dist-info \
            /opt/venv/lib/python*/site-packages/pillow-*.dist-info \
            /opt/venv/lib/python*/site-packages/certifi-*.dist-info \
            /opt/venv/lib/python*/site-packages/certifi-*.egg-info && \
-    pip install --prefix=/opt/venv --no-cache-dir --force-reinstall \
+    VIRTUAL_ENV=/opt/venv uv pip install --reinstall \
         "Pillow>=13.0.0" \
         "certifi>=2026.10.23" && \
-    python -c 'import sys, certifi; from PIL import Image; from importlib.metadata import distributions, version; records=[(d.version,str(d._path)) for d in distributions() if (d.metadata.get("Name") or "").lower()=="pillow"]; certifi_records=[(d.version,str(d._path)) for d in distributions() if (d.metadata.get("Name") or "").lower()=="certifi"]; print("Python:",sys.executable); print("Pillow import:",Image.__version__); print("Pillow records:",records); print("certifi import:",certifi.__version__); print("certifi records:",certifi_records); print("CA bundle:",certifi.where()); assert len(records)==1,records; assert records[0][0]==Image.__version__; assert tuple(map(int,Image.__version__.split(".")[:2])) >= (13,0); assert len(certifi_records)==1,certifi_records; assert certifi_records[0][0]==certifi.__version__; assert certifi.__version__ >= "2026.10.23"'
+    /opt/venv/bin/python -c 'import sys; from importlib.metadata import distributions, version; records=[(d.version,str(d._path)) for d in distributions() if (d.metadata.get("Name") or "").lower()=="pillow"]; certifi_records=[(d.version,str(d._path)) for d in distributions() if (d.metadata.get("Name") or "").lower()=="certifi"]; print("Python:",sys.executable); print("Pillow version:",version("Pillow")); print("Pillow records:",records); print("certifi version:",version("certifi")); print("certifi records:",certifi_records); assert len(records)==1,records; assert records[0][0]==version("Pillow"); assert tuple(map(int,version("Pillow").split(".")[:2])) >= (13,0); assert len(certifi_records)==1,certifi_records; assert certifi_records[0][0]==version("certifi"); assert version("certifi") >= "2026.10.23"'
