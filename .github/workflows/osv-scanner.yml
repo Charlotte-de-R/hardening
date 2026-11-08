@@ -1,0 +1,67 @@
+name: OSV-Scanner (report-only)
+
+# Report-only: findings are uploaded to Code scanning as SARIF.
+# This workflow never gates a build, publish, or pull request.
+# It complements Trivy with a second engine: this file scans the
+# repository source; osv-scanner-images.yml re-checks the published
+# hardened images after each scheduled build completes.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: '5 4 * * 1' # Mondays 04:05 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: osv-scanner-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  OSV_VERSION: '2.7.0'
+  OSV_SHA256: '160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b'
+
+jobs:
+  source-scan:
+    name: OSV source scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install OSV-Scanner (checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -sSfL -o /tmp/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  /tmp/osv-scanner" | sha256sum -c -
+          sudo install -m 0755 /tmp/osv-scanner /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+      - name: Scan source (report-only)
+        continue-on-error: true
+        run: |
+          osv-scanner scan source \
+            --recursive \
+            --allow-no-lockfiles \
+            --format sarif \
+            --output-file osv-source.sarif \
+            .
+
+      - name: Warn if SARIF was not produced
+        if: always() && hashFiles('osv-source.sarif') == ''
+        run: echo "::warning::osv-source.sarif was not produced; check the scan step log."
+
+      - name: Upload SARIF to Code scanning
+        if: always() && hashFiles('osv-source.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: osv-source.sarif
+          category: osv-source
