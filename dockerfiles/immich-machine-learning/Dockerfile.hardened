@@ -70,6 +70,19 @@ RUN echo "Cache bust: $CACHEBUST" && \
     (rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/cache/debconf/* 2>/dev/null || true)
 # --- COMMON HARDENING END ---
 
+# システム pip を 26.3 に更新する (アラート #10676 の根本対応)。
+# Trivy の検出元はアプリの venv ではなく、システム pip が同梱する
+# vendored certifi 2026.06.17 (GHSA-6q48-6c7w-9gw2)。
+# pip 26.3 は vendored certifi 2026.10.23 を同梱する。
+# 初回取得で旧 pip の TLS を使わないよう、pip は使わず OS の CA ストアで
+# 検証する経路で wheel を取得し、固定 SHA-256 を照合してから導入する。
+RUN /usr/local/bin/python3 -c "import urllib.request; urllib.request.urlretrieve('https://files.pythonhosted.org/packages/07/25/ee8c38ae72d66b844ce8eb9711ba905dba21ca1a8a0c960057c41cd23337/pip-26.3-py3-none-any.whl', '/tmp/pip-26.3-py3-none-any.whl')" && \
+    echo "f3b60b20ffaadd4415ed7957212a38ac63fa4c5fa375bd0f4a797777940fad13  /tmp/pip-26.3-py3-none-any.whl" | sha256sum -c - && \
+    pip install --no-cache-dir /tmp/pip-26.3-py3-none-any.whl && \
+    rm -f /tmp/pip-26.3-py3-none-any.whl && \
+    pip --version | grep -q "pip 26.3 from" && \
+    /usr/local/bin/python3 -c 'from pip._vendor import certifi; print("pip vendored certifi:", certifi.__version__); assert certifi.__version__ >= "2026.10.18", certifi.__version__'
+
 # The upstream image uses a pip-free runtime venv. Install packages with
 # the image's available pip and --prefix so files land in /opt/venv.
 RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
