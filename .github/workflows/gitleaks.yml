@@ -39,6 +39,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Remove any stale report
+        run: rm -f gitleaks.sarif
+
       - name: Install Gitleaks (checksum-verified)
         run: |
           set -euo pipefail
@@ -72,12 +75,35 @@ jobs:
               .
           fi
 
+      # --redact masks detected secret values, but NOT a secret that was
+      # repeated inside a commit message: Gitleaks copies the raw message
+      # into partialFingerprints.commitMessage. Strip only that field
+      # before upload; every other fingerprint and the finding itself
+      # are preserved.
+      - name: Strip commit messages from SARIF
+        if: hashFiles('gitleaks.sarif') != ''
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          with open('gitleaks.sarif') as f:
+              d = json.load(f)
+          for run in d.get('runs', []):
+              for res in run.get('results', []):
+                  pf = res.get('partialFingerprints')
+                  if isinstance(pf, dict):
+                      pf.pop('commitMessage', None)
+          with open('gitleaks.sarif', 'w') as f:
+              json.dump(d, f)
+          PYEOF
+
       - name: Warn if SARIF was not produced
         if: always() && hashFiles('gitleaks.sarif') == ''
         run: echo "::warning::gitleaks.sarif was not produced; check the scan step log."
 
+      # success() (not always()): if the commit-message stripping above
+      # failed, the unsanitized report must not be uploaded.
       - name: Upload SARIF to Code scanning
-        if: always() && hashFiles('gitleaks.sarif') != ''
+        if: success() && hashFiles('gitleaks.sarif') != ''
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: gitleaks.sarif

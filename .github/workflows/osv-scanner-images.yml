@@ -87,3 +87,10 @@ jobs:
         with:
           sarif_file: osv-image.sarif
           category: osv-image-${{ matrix.name }}
+          # On workflow_run, this workflow's own context points at the
+          # current default-branch HEAD, which may be newer than the
+          # commit that produced the images. Attribute the results to
+          # the triggering build's commit instead. Manual dispatch
+          # falls back to this run's own context.
+          ref: ${{ github.event_name == 'workflow_run' && format('refs/heads/{0}', github.event.workflow_run.head_branch) || github.ref }}
+          sha: ${{ github.event.workflow_run.head_sha || github.sha }}
