@@ -1,0 +1,110 @@
+name: Gitleaks (report-only)
+
+# Report-only: findings are uploaded to Code scanning as SARIF.
+# This workflow never gates a build, publish, or pull request.
+# Secret values are redacted (--redact) so they never appear in logs or SARIF.
+#
+# Scope separation:
+# - pull_request: only the PR commit range (base..head) is scanned.
+# - push / schedule / dispatch: the full history is scanned.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: '41 3 * * 1' # Mondays 03:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gitleaks:
+    name: Gitleaks scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      GITLEAKS_VERSION: '8.30.1'
+      GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Remove any stale report
+        run: rm -f gitleaks.sarif
+
+      - name: Install Gitleaks (checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -sSfL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run Gitleaks (report-only)
+        continue-on-error: true
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR: scan only the commits the PR introduces.
+            gitleaks git \
+              --redact \
+              --report-format sarif \
+              --report-path gitleaks.sarif \
+              --log-opts="${PR_BASE_SHA}..${PR_HEAD_SHA}" \
+              .
+          else
+            # push / schedule / dispatch: scan the full history.
+            gitleaks git \
+              --redact \
+              --report-format sarif \
+              --report-path gitleaks.sarif \
+              .
+          fi
+
+      # --redact masks detected secret values, but NOT a secret that was
+      # repeated inside a commit message: Gitleaks copies the raw message
+      # into partialFingerprints.commitMessage. Strip only that field
+      # before upload; every other fingerprint and the finding itself
+      # are preserved.
+      - name: Strip commit messages from SARIF
+        if: hashFiles('gitleaks.sarif') != ''
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          with open('gitleaks.sarif') as f:
+              d = json.load(f)
+          for run in d.get('runs', []):
+              for res in run.get('results', []):
+                  pf = res.get('partialFingerprints')
+                  if isinstance(pf, dict):
+                      pf.pop('commitMessage', None)
+          with open('gitleaks.sarif', 'w') as f:
+              json.dump(d, f)
+          PYEOF
+
+      - name: Warn if SARIF was not produced
+        if: always() && hashFiles('gitleaks.sarif') == ''
+        run: echo "::warning::gitleaks.sarif was not produced; check the scan step log."
+
+      # success() (not always()): if the commit-message stripping above
+      # failed, the unsanitized report must not be uploaded.
+      - name: Upload SARIF to Code scanning
+        if: success() && hashFiles('gitleaks.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks

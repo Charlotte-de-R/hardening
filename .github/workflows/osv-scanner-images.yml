@@ -1,0 +1,96 @@
+name: OSV-Scanner Images (report-only)
+
+# Report-only: findings are uploaded to Code scanning as SARIF.
+# This workflow never gates a build, publish, or pull request.
+#
+# Triggered by the completion of "Scheduled Hardened Builds" so the
+# image scan can never start before the daily build has finished
+# publishing. Each image is scanned as its own matrix job and uploaded
+# under its own SARIF category (osv-image-<name>), so results stay
+# attributable to exactly one image.
+
+on:
+  workflow_run:
+    workflows: [ "Scheduled Hardened Builds" ]
+    types: [ completed ]
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: osv-scanner-images
+  cancel-in-progress: false
+
+env:
+  OSV_VERSION: '2.7.0'
+  OSV_SHA256: '160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b'
+
+jobs:
+  image-scan:
+    name: OSV image scan (${{ matrix.name }})
+    # Manual runs are always allowed; workflow_run fires only when the
+    # build workflow succeeded, so a failed or cancelled build never
+    # triggers a scan of the previously published images.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        name:
+          - tailscale
+          - crowdsec
+          - socket-proxy
+          - promtail
+          - immich-server
+          - immich-machine-learning
+          - immich-redis
+          - immich-postgres
+          - nextcloud
+          - mariadb
+          - vaultwarden
+          - tetragon
+          - portainer
+          - cryptpad
+    steps:
+      - name: Install OSV-Scanner (checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -sSfL -o /tmp/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  /tmp/osv-scanner" | sha256sum -c -
+          sudo install -m 0755 /tmp/osv-scanner /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+      - name: Scan published image (report-only)
+        continue-on-error: true
+        run: |
+          osv-scanner scan image \
+            --format sarif \
+            --output-file osv-image.sarif \
+            "ghcr.io/charlotte-de-r/hardening/${{ matrix.name }}:hardened"
+
+      - name: Warn if SARIF was not produced
+        if: always() && hashFiles('osv-image.sarif') == ''
+        run: echo "::warning::osv-image.sarif was not produced for ${{ matrix.name }}; check the scan step log."
+
+      - name: Upload SARIF to Code scanning
+        if: always() && hashFiles('osv-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: osv-image.sarif
+          category: osv-image-${{ matrix.name }}
+          # On workflow_run, this workflow's own context points at the
+          # current default-branch HEAD, which may be newer than the
+          # commit that produced the images. Attribute the results to
+          # the triggering build's commit instead. Manual dispatch
+          # falls back to this run's own context.
+          ref: ${{ github.event_name == 'workflow_run' && format('refs/heads/{0}', github.event.workflow_run.head_branch) || github.ref }}
+          sha: ${{ github.event.workflow_run.head_sha || github.sha }}
