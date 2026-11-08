@@ -122,6 +122,65 @@ pkgs.forEach(pkg => {\
 });\
 console.log('All handlebars instances validated successfully.');"
 
+# ★ tar を 7.5.19 (CVE-2026-59873 対策) に外科的置換
+# 公開イメージ内の実インスタンスは .pnpm 配下の1件のみであることを確認済み。
+# 件数が想定と異なる場合は依存構造が変化した可能性があるため、取りこぼしを
+# 防ぐ目的でビルドを失敗させる（要再確認）。
+RUN mkdir -p /tmp/patch-tar && cd /tmp/patch-tar && \
+    npm init -y && \
+    npm install tar@7.5.19 && \
+    echo "Searching for tar directories..." && \
+    find /usr/src/app/server/node_modules -type d -name "tar" -prune > /tmp/tar_dirs.txt && \
+    COUNT=$(wc -l < /tmp/tar_dirs.txt) && \
+    echo "Found $COUNT tar instance(s) to patch." && \
+    if [ "$COUNT" -ne 1 ]; then echo "Error: Expected exactly 1 tar instance, found $COUNT. Re-verify the dependency structure before adjusting this guard."; exit 1; fi && \
+    while IFS= read -r dir; do \
+        echo "Patching: $dir"; \
+        rm -rf "$dir" && \
+        cp -a /tmp/patch-tar/node_modules/tar "$dir"; \
+    done < /tmp/tar_dirs.txt && \
+    rm -rf /tmp/patch-tar /tmp/tar_dirs.txt
+
+# tar バージョン検証
+RUN node -e "\
+const fs = require('fs');\
+const path = require('path');\
+function findPackageJson(dir) {\
+  let results = [];\
+  const files = fs.readdirSync(dir, { withFileTypes: true });\
+  for (const file of files) {\
+    if (file.isSymbolicLink()) {\
+      continue;\
+    }\
+    if (file.isDirectory() && file.name === 'tar') {\
+      const pkgPath = path.join(dir, file.name, 'package.json');\
+      if (fs.existsSync(pkgPath)) results.push(pkgPath);\
+    } else if (file.isDirectory()) {\
+      results = results.concat(findPackageJson(path.join(dir, file.name)));\
+    }\
+  }\
+  return results;\
+}\
+const pkgs = findPackageJson('/usr/src/app/server/node_modules');\
+if (pkgs.length !== 1) { console.error('Error: Expected exactly 1 tar package, found ' + pkgs.length + '.'); process.exit(1); }\
+pkgs.forEach(pkg => {\
+  const pkgDir = path.dirname(pkg);\
+  const version = require(pkg).version;\
+  console.log('Found tar version', version, 'at', pkg);\
+  if (version !== '7.5.19') {\
+    console.error('Validation failed! Version is not 7.5.19.');\
+    process.exit(1);\
+  }\
+  try {\
+    require(pkgDir);\
+    console.log('Successfully required tar from ' + pkgDir);\
+  } catch(e) {\
+    console.error('Validation failed! Could not require tar from ' + pkgDir, e);\
+    process.exit(1);\
+  }\
+});\
+console.log('All tar instances validated successfully.');"
+
 # OpenEXR パーサーの無効化（CVE-2026-34543 / CVE-2025-64181 等の対策）
 RUN for p in /etc/ImageMagick-*/policy.xml; do \
       if [ -f "$p" ] && ! grep -q 'pattern="EXR"' "$p"; then \
