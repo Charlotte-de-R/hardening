@@ -83,6 +83,30 @@ RUN /usr/local/bin/python3 -c "import urllib.request; urllib.request.urlretrieve
     pip --version | grep -q "pip 26.3 from" && \
     /usr/local/bin/python3 -c 'from pip._vendor import certifi; print("pip vendored certifi:", certifi.__version__); assert certifi.__version__ >= "2026.10.18", certifi.__version__'
 
+# ensurepip 同梱 wheel の差し替え (アラート #10676 の残件)。
+# 上の pip 更新では ensurepip の _bundled に残る pip 26.2.1 の wheel
+# (vendored certifi 2026.06.17) は置き換わらず、Trivy の検出が残る。
+# ensurepip は同梱バージョンから決まるファイル名で wheel を探すため、
+# ファイル名は維持したまま中身を pip 26.3 の wheel に差し替える。
+# 取得は pip を使わず OS の CA ストアで検証し、固定 SHA-256 を照合する。
+# 差し替え後は ensurepip 経由 (venv 作成) で入る pip が 26.3 になることと、
+# その vendored certifi が修正版であることを実機で検証する。
+RUN set -eux; \
+    BUNDLED_DIR=/usr/local/lib/python3.13/ensurepip/_bundled; \
+    set -- "$BUNDLED_DIR"/pip-*.whl; \
+    [ "$#" -eq 1 ] && [ -f "$1" ]; \
+    [ "$(basename "$1")" = "pip-26.2.1-py3-none-any.whl" ]; \
+    /usr/local/bin/python3 -c "import urllib.request; urllib.request.urlretrieve('https://files.pythonhosted.org/packages/07/25/ee8c38ae72d66b844ce8eb9711ba905dba21ca1a8a0c960057c41cd23337/pip-26.3-py3-none-any.whl', '/tmp/pip-26.3-py3-none-any.whl')"; \
+    echo "f3b60b20ffaadd4415ed7957212a38ac63fa4c5fa375bd0f4a797777940fad13  /tmp/pip-26.3-py3-none-any.whl" | sha256sum -c -; \
+    cp /tmp/pip-26.3-py3-none-any.whl "$1"; \
+    rm -f /tmp/pip-26.3-py3-none-any.whl; \
+    BUNDLED_PATH="$1" /usr/local/bin/python3 -c 'import os, zipfile, re; z = zipfile.ZipFile(os.environ["BUNDLED_PATH"]); t = z.read("pip/_vendor/certifi/__init__.py").decode(); v = re.search(r"__version__\s*=\s*.([0-9.]+).", t).group(1); print("bundled wheel vendored certifi:", v); assert v >= "2026.10.18", v'; \
+    rm -rf /tmp/ensurepip-verify; \
+    /usr/local/bin/python3 -m venv /tmp/ensurepip-verify; \
+    /tmp/ensurepip-verify/bin/pip --version | grep -q "pip 26.3 from"; \
+    /tmp/ensurepip-verify/bin/python -c 'from pip._vendor import certifi; print("ensurepip-installed pip vendored certifi:", certifi.__version__); assert certifi.__version__ >= "2026.10.18", certifi.__version__'; \
+    rm -rf /tmp/ensurepip-verify
+
 # The upstream image uses a pip-free runtime venv. Install packages with
 # the image's available pip and --prefix so files land in /opt/venv.
 RUN rm -rf /opt/venv/lib/python*/site-packages/anyio* && \
