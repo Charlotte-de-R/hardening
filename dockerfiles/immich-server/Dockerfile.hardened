@@ -181,6 +181,63 @@ pkgs.forEach(pkg => {\
 });\
 console.log('All tar instances validated successfully.');"
 
+# ★ ws を 8.21.0 (CVE-2026-48779 対策) に外科的置換
+RUN mkdir -p /tmp/patch-ws && cd /tmp/patch-ws && \
+    npm init -y && \
+    npm install ws@8.21.0 && \
+    echo "Searching for ws directories..." && \
+    find /usr/src/app/server/node_modules -type d -name "ws" -prune > /tmp/ws_dirs.txt && \
+    COUNT=$(wc -l < /tmp/ws_dirs.txt) && \
+    echo "Found $COUNT ws instance(s) to patch." && \
+    if [ "$COUNT" -eq 0 ]; then echo "Error: No ws instance found to patch."; exit 1; fi && \
+    while IFS= read -r dir; do \
+        echo "Patching: $dir"; \
+        rm -rf "$dir" && \
+        cp -a /tmp/patch-ws/node_modules/ws "$dir"; \
+    done < /tmp/ws_dirs.txt && \
+    rm -rf /tmp/patch-ws /tmp/ws_dirs.txt
+
+# ws バージョン検証
+RUN node -e "\
+const fs = require('fs');\
+const path = require('path');\
+function findPackageJson(dir) {\
+  let results = [];\
+  const files = fs.readdirSync(dir, { withFileTypes: true });\
+  for (const file of files) {\
+    if (file.isSymbolicLink()) {\
+      continue;\
+    }\
+    if (file.isDirectory() && file.name === 'ws') {\
+      const pkgPath = path.join(dir, file.name, 'package.json');\
+      if (fs.existsSync(pkgPath)) results.push(pkgPath);\
+    } else if (file.isDirectory()) {\
+      results = results.concat(findPackageJson(path.join(dir, file.name)));\
+    }\
+  }\
+  return results;\
+}\
+const pkgs = findPackageJson('/usr/src/app/server/node_modules');\
+if (pkgs.length === 0) { console.error('Error: Expected at least 1 ws package, found 0.'); process.exit(1); }\
+pkgs.forEach(pkg => {\
+  const pkgDir = path.dirname(pkg);\
+  const version = require(pkg).version;\
+  console.log('Found ws version', version, 'at', pkg);\
+  const v = version.split('.').map(Number);\
+  if (v[0] < 8 || (v[0] === 8 && v[1] < 21)) {\
+    console.error('Validation failed! Version is less than 8.21.0.');\
+    process.exit(1);\
+  }\
+  try {\
+    require(pkgDir);\
+    console.log('Successfully required ws from ' + pkgDir);\
+  } catch(e) {\
+    console.error('Validation failed! Could not require ws from ' + pkgDir, e);\
+    process.exit(1);\
+  }\
+});\
+console.log('All ws instances validated successfully.');"
+
 # OpenEXR パーサーの無効化（CVE-2026-34543 / CVE-2025-64181 等の対策）
 RUN for p in /etc/ImageMagick-*/policy.xml; do \
       if [ -f "$p" ] && ! grep -q 'pattern="EXR"' "$p"; then \
