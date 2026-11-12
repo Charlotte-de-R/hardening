@@ -59,6 +59,10 @@ LABEL org.opencontainers.image.docker-cli-version="${DOCKER_CLI_VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/Charlotte-de-R/hardening"
 LABEL org.opencontainers.image.description="Portainer CE (hardened build)"
 
+# TEST (validation only): OS update step in the final stage.
+# Verifies whether the upstream portainer-ce based final stage can run apk upgrade.
+RUN apk update && apk upgrade --no-cache
+
 COPY --from=builder /go/bin/portainer /portainer
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=patcher /app/public /public
