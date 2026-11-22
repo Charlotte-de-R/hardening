@@ -366,6 +366,9 @@ elif [[ -n "$REPO" ]]; then
       crowdsec)
         BASE_IMAGE_REF="ghcr.io/crowdsecurity/crowdsec:${DESIRED_VER}"
         ;;
+      portainer)
+        BASE_IMAGE_REF="portainer/portainer-ce:${DESIRED_VER}"
+        ;;
       nextcloud)
         BASE_IMAGE_REF="nextcloud:${DESIRED_VER}"
         ;;
