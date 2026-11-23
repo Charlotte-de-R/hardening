@@ -262,6 +262,9 @@ run_mapping_test "unknown-app unmonitored fallback" "unknown-app" "" ""
 # 11. Registry path + tag input (ghcr.io/org/vaultwarden:v1.0.0)
 run_mapping_test "registry path and tag mapping" "ghcr.io/org/vaultwarden:v1.0.0" "dani-garcia/vaultwarden" "1.0.0"
 
+# 12. alloy (STRIP_V=false)
+run_mapping_test "alloy mapping" "alloy" "grafana/alloy" "v1.0.0"
+
 
 # --- Docker pull failure tests ---
 run_docker_pull_failure_test() {

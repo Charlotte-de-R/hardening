@@ -49,6 +49,7 @@ jobs:
           - crowdsec
           - socket-proxy
           - promtail
+          - alloy
           - immich-server
           - immich-machine-learning
           - immich-redis

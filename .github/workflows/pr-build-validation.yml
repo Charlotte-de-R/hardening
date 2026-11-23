@@ -62,6 +62,8 @@ jobs:
             context: ./dockerfiles/tailscale
           - name: promtail
             context: ./dockerfiles/promtail
+          - name: alloy
+            context: ./dockerfiles/alloy
           - name: tetragon
             context: ./dockerfiles/tetragon
           - name: cryptpad
@@ -77,7 +79,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x ./update_dockerfiles.sh
+          chmod +x ./check_update.sh ./update_dockerfiles.sh
           ./update_dockerfiles.sh
 
       - name: Set up Docker Buildx

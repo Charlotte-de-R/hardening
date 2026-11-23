@@ -188,6 +188,9 @@ case "$IMAGE_NAME" in
     REPO="portainer/portainer"
     STRIP_V=true
     ;;
+  alloy)
+    REPO="grafana/alloy"
+    ;;
   cryptpad)
     REPO="cryptpad/cryptpad"
     ;;

@@ -32,6 +32,7 @@
 ├── templates/
 │   └── universal_hardening.txt # Dockerfileに挿入される汎用的なセキュリティ強化スニペット
 ├── dockerfiles/
+│   ├── alloy/
 │   ├── crowdsec/
 │   ├── cryptpad/
 │   ├── immich-machine-learning/
