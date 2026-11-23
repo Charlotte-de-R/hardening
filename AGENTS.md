@@ -15,6 +15,7 @@ AI エージェントは、本ガイドラインに従って設計思想を損�
 ├── templates/
 │   └── universal_hardening.txt    # 共通堅牢化スクリプト（Alpine/Debian OS更新、不要ツール削除）
 ├── dockerfiles/
+│   ├── alloy/
 │   ├── crowdsec/
 │   ├── cryptpad/
 │   ├── immich-machine-learning/   # Python 仮想環境 (/opt/venv)
