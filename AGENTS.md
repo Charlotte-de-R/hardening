@@ -25,7 +25,6 @@ AI エージェントは、本ガイドラインに従って設計思想を損�
 │   ├── mariadb/
 │   ├── nextcloud/                 # sid 更新除外（Apache MPM 競合対策）
 │   ├── portainer/                 # Go アプリ再ビルド + Docker CLI 更新
-│   ├── promtail/
 │   ├── socket-proxy/
 │   ├── tailscale/
 │   ├── tetragon/

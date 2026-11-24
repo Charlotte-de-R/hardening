@@ -19,7 +19,6 @@ on:
           - tailscale
           - crowdsec
           - socket-proxy
-          - promtail
           - alloy
           - immich-server
           - immich-machine-learning
@@ -75,7 +74,6 @@ jobs:
               {"name":"tailscale","context":"./dockerfiles/tailscale","image_tag":"tailscale:hardened"},
               {"name":"crowdsec","context":"./dockerfiles/crowdsec","image_tag":"crowdsec:hardened"},
               {"name":"socket-proxy","context":"./dockerfiles/socket-proxy","image_tag":"socket-proxy:hardened"},
-              {"name":"promtail","context":"./dockerfiles/promtail","image_tag":"promtail:hardened"},
               {"name":"alloy","context":"./dockerfiles/alloy","image_tag":"alloy:hardened"},
               {"name":"immich-server","context":"./dockerfiles/immich-server","image_tag":"immich-server:hardened"},
               {"name":"immich-machine-learning","context":"./dockerfiles/immich-machine-learning","image_tag":"immich-machine-learning:hardened"},
