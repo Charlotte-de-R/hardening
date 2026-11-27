@@ -60,8 +60,6 @@ jobs:
             context: ./dockerfiles/socket-proxy
           - name: tailscale
             context: ./dockerfiles/tailscale
-          - name: promtail
-            context: ./dockerfiles/promtail
           - name: alloy
             context: ./dockerfiles/alloy
           - name: tetragon

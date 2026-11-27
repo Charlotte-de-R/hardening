@@ -42,7 +42,6 @@
 │   ├── mariadb/
 │   ├── nextcloud/
 │   ├── portainer/
-│   ├── promtail/
 │   ├── socket-proxy/
 │   ├── tailscale/
 │   ├── tetragon/

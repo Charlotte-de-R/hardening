@@ -48,7 +48,6 @@ jobs:
           - tailscale
           - crowdsec
           - socket-proxy
-          - promtail
           - alloy
           - immich-server
           - immich-machine-learning
